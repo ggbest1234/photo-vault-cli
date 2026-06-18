@@ -1,81 +1,83 @@
 /**
- * CLIP 零样本图像分类
- *
- * 用 Xenova/clip-vit-base-patch32 模型
- * 模型需预下载到 node_modules/@xenova/transformers/models/Xenova/clip-vit-base-patch32/
- * 或首次运行时自动从 HuggingFace 下载（需代理）
+ * CLIP 零样本图像分类（Large 模型版）
+ * 关键：@xenova/transformers 走 dynamic import，避免与 sharp native binary 冲突
  */
-import { pipeline, env } from '@xenova/transformers';
+import fs from 'fs';
+import path from 'path';
 
-// 允许使用本地模型（避免去远程拉）
-env.allowLocalModels = true;
-env.useBrowserCache = false;
-env.useFS = true;
+const MODEL_ID = 'Xenova/clip-vit-large-patch14';
+const HF_MIRROR = 'https://hf-mirror.com';
+const CACHE_DIR = './models/clip-cache';
 
-// 可选：设置 HuggingFace 镜像（国内环境）
-// env.remoteHost = 'https://hf-mirror.com';
-
-let _classifier: any = null;
-let _loading: Promise<void> | null = null;
-
-const CANDIDATE_LABELS = [
-  // 室内
-  'meeting', 'office', 'desk', 'laptop', 'book', 'notebook', 'phone',
-  'kitchen', 'restaurant', 'bedroom', 'living room', 'window', 'bathroom',
-  // 室外
-  'street', 'city', 'building', 'sky', 'sunset', 'sunrise',
-  'beach', 'mountain', 'snow', 'rain', 'forest', 'park', 'garden', 'river',
-  // 物体
-  'food', 'coffee', 'tea', 'water', 'wine', 'fruit', 'bread',
-  'plant', 'flower', 'tree',
-  'car', 'bike', 'train', 'bus',
-  'dog', 'cat', 'bird', 'fish',
-  // 人
-  'people', 'selfie', 'group', 'family', 'friend', 'child', 'baby',
-  'hand', 'face', 'smile',
-  // 物品
-  'paper', 'document', 'screen', 'art', 'painting', 'photo', 'poster',
-  'computer', 'keyboard', 'mouse', 'cable', 'charger',
-  'clothes', 'shoes', 'hat', 'bag',
-  // 抽象
-  'morning', 'afternoon', 'evening', 'night',
-  'spring', 'summer', 'autumn', 'winter',
-];
+export function isModelDownloaded(): boolean {
+  const modelDir = path.join(CACHE_DIR, 'models--Xenova--clip-vit-large-patch14');
+  const snapshotsDir = path.join(modelDir, 'snapshots');
+  if (fs.existsSync(snapshotsDir)) {
+    try {
+      return fs.readdirSync(snapshotsDir).length > 0;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 export type ClipTag = {
   label: string;
   score: number;
 };
 
-export async function ensureClip(): Promise<void> {
-  if (_classifier) return;
-  if (_loading) return _loading;
+let _pipeline: any = null;
+let _transformers: any = null;
 
-  _loading = (async () => {
-    _classifier = await pipeline(
-      'zero-shot-image-classification',
-      'Xenova/clip-vit-base-patch32'
-    );
-  })();
-
-  return _loading;
+async function getTransformers() {
+  if (_transformers) return _transformers;
+  const mod: any = await import('@xenova/transformers');
+  _transformers = mod;
+  const { env } = mod;
+  env.allowLocalModels = true;
+  env.useBrowserCache = false;
+  env.useFS = true;
+  if (HF_MIRROR) env.remoteHost = HF_MIRROR;
+  return mod;
 }
+
+export async function ensureClip(): Promise<void> {
+  if (_pipeline) return;
+  const { pipeline } = await getTransformers();
+  if (!isModelDownloaded()) {
+    console.log('\n[CLIP] 需要下载 Large 模型...\n');
+  }
+  _pipeline = await pipeline(
+    'zero-shot-image-classification',
+    MODEL_ID,
+    { cache_dir: CACHE_DIR }
+  );
+}
+
+const CANDIDATE_LABELS = [
+  'meeting', 'office', 'desk', 'laptop', 'book', 'phone',
+  'kitchen', 'restaurant', 'bedroom', 'living room', 'bathroom',
+  'street', 'city', 'building', 'sky', 'sunset', 'sunrise',
+  'beach', 'mountain', 'snow', 'rain', 'forest', 'park',
+  'food', 'coffee', 'tea', 'water', 'wine', 'fruit',
+  'plant', 'flower', 'tree', 'dog', 'cat', 'bird',
+  'car', 'bike', 'train', 'bus',
+  'people', 'selfie', 'group', 'family', 'child',
+  'screen', 'document', 'art', 'photo',
+  'morning', 'afternoon', 'evening', 'night',
+];
 
 export async function clipTag(imagePath: string): Promise<ClipTag[]> {
   try {
     await ensureClip();
-    if (!_classifier) return [];
-    const result = await _classifier(imagePath, CANDIDATE_LABELS);
-    return (result as any[]).slice(0, 5).map((r: any) => ({
+    if (!_pipeline) return [];
+    const result = await _pipeline(imagePath, CANDIDATE_LABELS);
+    return result.slice(0, 5).map((r: any) => ({
       label: r.label,
       score: r.score,
     }));
   } catch (err) {
-    console.error(`CLIP failed for ${imagePath}:`, (err as Error).message);
     return [];
   }
-}
-
-export function isClipAvailable(): boolean {
-  return _classifier !== null;
 }

@@ -1,22 +1,19 @@
 /**
- * Organize 命令 - 智能归类
- *
- * 流程：
- *   1. 扫描文件夹（递归 + MD5）
- *   2. 启发式标签（文件名 + EXIF + 业务映射）
- *   3. CLIP 标签（可选）
- *   4. 融合 + 归类计划
- *   5. dry-run 展示 / apply 真移动（带 readline 确认）
+ * Organize 命令 - 智能归类（支持 date / clip / heuristic 模式 + JSON 协议 + 并行 + 缓存）
  */
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { promises as fs } from 'fs';
 import { createInterface } from 'readline';
+import pLimit from 'p-limit';
 import { scanFolder, type ScannedFile } from '../scanner.js';
-import { clipTag, type ClipTag } from '../clip.js';
+import { clipTag, type ClipTag, isModelDownloaded } from '../clip.js';
 import { extractExif } from '../exif.js';
 import { heuristicTag } from '../heuristics.js';
+import { makeThumbnail } from '../thumbnail.js';
+import { emit, logEvent, progressEvent, resultEvent, errorEvent } from '../protocol.js';
 
 type OrganizeOptions = {
   output?: string;
@@ -26,6 +23,14 @@ type OrganizeOptions = {
   threshold?: string;
   limit?: string;
   skip?: string[];
+  json?: boolean;
+  stream?: boolean;
+  concurrency?: string;
+  cache?: string;
+  noCache?: boolean;
+  thumbs?: boolean;
+  thumbSize?: string;
+  thumbCache?: string;
 };
 
 type FilePlan = {
@@ -37,240 +42,340 @@ type FilePlan = {
   targetPath: string;
   dateFolder: string;
   exif: any;
+  thumbnail?: {
+    dataUrl: string;
+    width: number;
+    height: number;
+    source: 'exif' | 'resize' | 'cache';
+  };
 };
 
-const isHeuristicMode = (m: string) => m === 'heuristic' || m === 'combined';
-const isClipMode = (m: string) => m === 'clip' || m === 'combined';
+function isClipMode(mode?: string) { return mode === 'clip' || mode === 'combined'; }
+function isHeuristicMode(mode?: string) { return mode === 'heuristic' || mode === 'combined'; }
+function isDateMode(mode?: string) { return mode === 'date'; }
 
-export async function organize(folder: string, options: OrganizeOptions) {
-  if (!folder) {
-    console.error(chalk.red('❌ Error: folder path is required'));
-    process.exit(1);
+async function fileExists(filePath: string): Promise<boolean> {
+  try { await fs.access(filePath); return true; } catch { return false; }
+}
+
+async function confirm(message: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(chalk.yellow(message + ' (y/N): '), answer => {
+      rl.close();
+      resolve(answer.toLowerCase() === 'y');
+    });
+  });
+}
+
+/* ---------------- 缓存 ---------------- */
+
+type CacheEntry = { mtimeMs: number; size: number; tags: string[]; clipTags: ClipTag[] };
+type CacheFile = { version: 1; entries: Record<string, CacheEntry> };
+
+async function loadCache(cachePath: string): Promise<CacheFile> {
+  try {
+    const buf = await fs.readFile(cachePath, 'utf-8');
+    const parsed = JSON.parse(buf);
+    if (parsed?.version === 1) return parsed as CacheFile;
+  } catch {}
+  return { version: 1, entries: {} };
+}
+
+async function saveCache(cachePath: string, cacheData: CacheFile): Promise<void> {
+  await fs.mkdir(path.dirname(cachePath), { recursive: true });
+  await fs.writeFile(cachePath, JSON.stringify(cacheData));
+}
+
+function fileCacheKey(file: ScannedFile): string {
+  return crypto.createHash('sha1').update(file.path).digest('hex');
+}
+
+/* ---------------- 主流程 ---------------- */
+
+export async function organize(folder: string, options: OrganizeOptions = {}) {
+  // 关键：注册 uncaughtException 兜底，避免 sharp/libvips 抛出未捕获错误 kill 进程
+  // 且导致 fd 未关闭（GUI 看到 "Closing file descriptor on garbage collection"）
+  const uncaughtHandler = (err: Error) => {
+    try {
+      errorEvent(`uncaught: ${err?.message || err}`);
+    } catch {}
+    try { process.exit(1); } catch {}
+  };
+  const unhandledRejectionHandler = (reason: any) => {
+    try {
+      errorEvent(`unhandled rejection: ${reason?.message || reason}`);
+    } catch {}
+  };
+  process.on('uncaughtException', uncaughtHandler);
+  process.on('unhandledRejection', unhandledRejectionHandler);
+
+  const output = options.output ?? path.join(folder, 'organized');
+  const mode = options.mode ?? 'combined';
+  const apply = options.apply ?? false;
+  const threshold = options.threshold ?? '0.1';
+  const limitOpt = options.limit ?? '0';
+  const skip = options.skip ?? [];
+  const json = options.json ?? false;
+  const stream = options.stream ?? false;
+  const concurrency = options.concurrency ?? '2';
+  const cachePath = options.cache ?? path.join(output, '.photo-vault-cache.json');
+  const noCache = options.noCache ?? false;
+  const thumbs = options.thumbs ?? false;
+  const thumbSize = parseInt(options.thumbSize ?? '240', 10);
+  const thumbCachePath = options.thumbCache ?? path.join(output, '.thumb-cache');
+
+  const thresholdNum = parseFloat(threshold);
+  const limitNum = parseInt(limitOpt, 10);
+  const concurrencyNum = Math.max(1, parseInt(concurrency, 10) || 2);
+
+  // 友好的 cli 输出
+  const say = (color: typeof chalk, msg: string) => {
+    if (json && stream) logEvent('info', msg);
+    else if (!json) console.log(color(msg));
+  };
+  const err = (msg: string) => {
+    if (json) errorEvent(msg);
+    else console.error(chalk.red(msg));
+  };
+
+  say(chalk.cyan, '\n📸 Photo Vault - 开始整理\n');
+
+  if (isClipMode(mode) && !isModelDownloaded()) {
+    say(chalk.yellow, '⚠️  CLIP 模型尚未下载，AI 识别功能将不可用\n');
   }
-  const mode = options.mode || 'combined';
-  const threshold = parseFloat(options.threshold || '0.1');
-  const limit = parseInt(options.limit || '0', 10);
-  const dryRun = !options.apply;  // --apply 才真移动
-  const outputDir = options.output || path.join(folder, 'organized');
-  const skipPatterns = options.skip || [];
 
-  console.log(chalk.bold(`\n📸 Photo Vault Organizer\n`));
-  console.log(chalk.gray(`Folder:    ${folder}`));
-  console.log(chalk.gray(`Output:    ${outputDir}`));
-  console.log(chalk.gray(`Mode:      ${mode}`));
-  console.log(chalk.gray(`Threshold: ${threshold}`));
-  if (skipPatterns.length > 0) {
-    console.log(chalk.gray(`Skip:      ${skipPatterns.join(', ')}`));
-  }
-  if (dryRun) {
-    console.log(chalk.yellow('⚠️  DRY RUN (use --apply to actually move)\n'));
-  } else {
-    console.log(chalk.green('🚀 APPLY MODE - files will be moved!\n'));
-  }
+  // 1) 扫描
+  if (json && stream) progressEvent('scan', 0, 0);
+  else if (!json) ora('正在扫描文件夹...').start();
+  const t0 = Date.now();
+  const files = await scanFolder(folder, { recursive: true, skip });
+  say(chalk.green, `✅ 扫描完成，共发现 ${files.length} 个文件`);
+  if (json && stream) progressEvent('scan', files.length, files.length);
+  if (limitNum > 0) files.splice(limitNum);
 
-  // 1. 扫描
-  const scanSpinner = ora('Scanning folder...').start();
-  let files = await scanFolder(folder, true);
+  // 2) 加载缓存
+  const cacheData: CacheFile = noCache ? { version: 1, entries: {} } : await loadCache(cachePath);
+  let cacheHits = 0;
 
-  // 跳过 skip patterns
-  if (skipPatterns.length > 0) {
-    files = files.filter(f => !skipPatterns.some(p => f.name.includes(p)));
-  }
+  // 3) 并行分析
+  const limit = pLimit(concurrencyNum);
+  const plans: FilePlan[] = new Array(files.length);
+  const total = files.length;
+  let done = 0;
 
-  if (limit > 0) {
-    files = files.slice(0, limit);
-    scanSpinner.succeed(`Scanned (limited to ${limit} files)`);
-  } else {
-    scanSpinner.succeed(`Scanned ${chalk.green(files.length)} files`);
-  }
+  const spinner = (!json && !stream) ? ora('正在分析文件...').start() : null;
 
-  if (files.length === 0) {
-    console.log(chalk.yellow('No files to process.'));
-    return;
-  }
+  const analyze = async (file: ScannedFile, idx: number) => {
+    try {
+      const key = fileCacheKey(file);
+      const cached = cacheData.entries[key];
+      let heuristicTags: string[] = [];
+      let filteredClip: ClipTag[] = [];
 
-  // 2. 处理每个文件
-  const tagSpinner = ora('Tagging files...').start();
-  const plans: FilePlan[] = [];
+      if (cached && cached.mtimeMs === file.mtime.getTime() && cached.size === file.size) {
+        heuristicTags = cached.tags;
+        filteredClip = cached.clipTags;
+        cacheHits++;
+      } else {
+        try {
+          const exif = await extractExif(file.path);
+          heuristicTags = isHeuristicMode(mode) ? await heuristicTag(file, exif) : [];
+        } catch (e) {
+          if (json && stream) errorEvent(`EXIF/heuristic failed for ${file.name}: ${e}`);
+        }
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    tagSpinner.text = `Tagging ${i + 1}/${files.length}: ${file.name}`;
+        try {
+          const clipRaw = isClipMode(mode) ? await clipTag(file.path) : [];
+          filteredClip = clipRaw.filter(t => t.score >= thresholdNum);
+        } catch (e) {
+          if (json && stream) errorEvent(`CLIP failed for ${file.name}: ${e}`);
+        }
 
-    // EXIF
-    const exif = await extractExif(file.path);
+        cacheData.entries[key] = {
+          mtimeMs: file.mtime.getTime(),
+          size: file.size,
+          tags: heuristicTags,
+          clipTags: filteredClip,
+        };
+      }
 
-    // 启发式标签
-    const heuristicTags = isHeuristicMode(mode)
-      ? await heuristicTag(file, exif)
-      : [];
+      const primaryTag = heuristicTags.length > 0
+        ? heuristicTags[0]
+        : (filteredClip[0]?.label || null);
 
-    // CLIP 标签
-    const clipTags = isClipMode(mode)
-      ? await clipTag(file.path)
-      : [];
+      const date = new Date(file.mtime);
+      const yyyyMm = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
-    // 过滤 CLIP 置信度
-    const filteredClip = clipTags.filter(t => t.score >= threshold);
+      let targetFolder: string;
+      if (isDateMode(mode)) {
+        targetFolder = path.join(output, 'by-date', yyyyMm);
+      } else if (primaryTag) {
+        targetFolder = path.join(output, 'by-tag', primaryTag);
+      } else {
+        targetFolder = path.join(output, 'by-tag', 'unsorted');
+      }
 
-    // 主标签（启发式优先）
-    const primaryTag = heuristicTags.length > 0
-      ? heuristicTags[0]
-      : (filteredClip[0]?.label || null);
+      let targetPath = path.join(targetFolder, file.name);
+      let counter = 1;
+      while (await fileExists(targetPath)) {
+        const ext = path.extname(file.name);
+        const base = path.basename(file.name, ext);
+        targetPath = path.join(targetFolder, `${base}_${counter}${ext}`);
+        counter++;
+      }
 
-    // 归类路径：by-tag/<primaryTag>/<YYYY-MM>/
-    const date = new Date(file.mtime);
-    const yyyyMm = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    const dateFolder = yyyyMm;
+      plans[idx] = {
+        source: file.path,
+        name: file.name,
+        tags: heuristicTags,
+        clipTags: filteredClip,
+        targetFolder,
+        targetPath,
+        dateFolder: yyyyMm,
+        exif: null,
+      };
 
-    let targetFolder: string;
-    if (primaryTag) {
-      targetFolder = path.join(outputDir, 'by-tag', primaryTag);
-    } else {
-      targetFolder = path.join(outputDir, 'by-tag', 'unsorted');
+      // 缩略图（开启时）— 单图失败不阻塞其他
+      if (thumbs) {
+        try {
+          const t = await makeThumbnail(file.path, {
+            size: thumbSize,
+            cacheDir: thumbCachePath,
+            noCache,
+          });
+          if (t) {
+            plans[idx].thumbnail = {
+              dataUrl: t.dataUrl,
+              width: t.width,
+              height: t.height,
+              source: t.source,
+            };
+          }
+        } catch (e) {
+          if (json && stream) errorEvent(`thumbnail failed for ${file.name}: ${e}`);
+        }
+      }
+    } catch (err) {
+      // 单图分析彻底失败也要让其他图继续 — 写一个空 plan
+      plans[idx] = {
+        source: file.path,
+        name: file.name,
+        tags: [],
+        clipTags: [],
+        targetFolder: path.join(output, 'by-tag', 'unsorted'),
+        targetPath: path.join(output, 'by-tag', 'unsorted', file.name),
+        dateFolder: 'unknown',
+        exif: null,
+      };
+      if (json && stream) errorEvent(`analyze hard-fail for ${file.name}: ${err}`);
     }
 
-    // 目标路径
-    let targetPath = path.join(targetFolder, file.name);
-    let counter = 1;
-    while (await fileExists(targetPath)) {
-      const ext = path.extname(file.name);
-      const base = path.basename(file.name, ext);
-      targetPath = path.join(targetFolder, `${base}_${counter}${ext}`);
-      counter++;
+    done++;
+    const pct = total > 0 ? Math.floor((done / total) * 100) : 100;
+    if (json && stream) {
+      progressEvent('analyze', done, total, file.name);
+    } else if (spinner) {
+      spinner.text = `正在分析 (${done}/${total}, ${pct}%): ${file.name}`;
     }
+  };
 
-    plans.push({
-      source: file.path,
-      name: file.name,
-      tags: heuristicTags,
-      clipTags: filteredClip,
-      targetFolder,
-      targetPath,
-      dateFolder,
-      exif,
+  await Promise.allSettled(files.map((f, i) => limit(() => analyze(f, i))));
+
+  if (spinner) spinner.succeed(`分析完成${cacheHits > 0 ? ` (缓存命中 ${cacheHits})` : ''}`);
+
+  // 4) 输出计划（仅非 json 模式打印到 stdout）
+  if (!json) {
+    console.log(chalk.green(`\n✅ 整理计划已生成（共 ${plans.length} 个文件）\n`));
+    plans.forEach((plan, index) => {
+      const clipStr = plan.clipTags.length > 0
+        ? plan.clipTags.map(t => `${t.label}(${t.score.toFixed(2)})`).join(', ')
+        : '无';
+      console.log(
+        chalk.gray(`${(index + 1).toString().padStart(2)}. `) +
+        chalk.white(plan.name.padEnd(28)) +
+        chalk.cyan('→ ') +
+        chalk.yellow(plan.targetFolder.split(path.sep).pop() || 'unsorted') +
+        chalk.gray(` [${clipStr}]`)
+      );
     });
   }
 
-  tagSpinner.succeed(`Tagged ${plans.length} files`);
-
-  // 3. 展示计划
-  console.log(chalk.bold('\n📋 Organization Plan:\n'));
-  for (const plan of plans) {
-    const allTags = [
-      ...plan.tags.map(t => chalk.cyan(t)),
-      ...plan.clipTags.map(t => chalk.yellow(`${t.label}(${(t.score * 100).toFixed(1)}%)`)),
-    ];
-    const tagStr = allTags.length > 0 ? allTags.join(' ') : chalk.gray('(no tags)');
-
-    const dateStr = plan.exif?.DateTimeOriginal
-      ? chalk.gray(`EXIF: ${plan.exif.DateTimeOriginal}`)
-      : '';
-
-    console.log(`  ${chalk.bold(plan.name)}`);
-    console.log(`    → ${chalk.gray(plan.targetFolder.replace(folder, '.'))}/`);
-    console.log(`    Tags: ${tagStr} ${dateStr}`);
-  }
-
-  // 4. 按日期归类副本（双轨）
-  if (mode === 'combined' || mode === 'clip' || mode === 'heuristic') {
-    console.log(chalk.bold('\n📅 Also creating by-date copies:\n'));
-    for (const plan of plans) {
-      const dateTarget = path.join(outputDir, 'by-date', plan.dateFolder, plan.name);
-      console.log(`  ${plan.name} → ${chalk.gray('by-date/' + plan.dateFolder + '/')}`);
-    }
-  }
-
-  // 5. 总结
-  const summary = {
-    total: plans.length,
-    withTags: plans.filter(p => p.tags.length > 0 || p.clipTags.length > 0).length,
-    unsorted: plans.filter(p => p.tags.length === 0 && p.clipTags.length === 0).length,
-    byTag: path.join(outputDir, 'by-tag'),
-    byDate: path.join(outputDir, 'by-date'),
+  // 5) 写报告
+  const report = {
+    timestamp: new Date().toISOString(),
+    sourceFolder: folder,
+    outputFolder: output,
+    totalFiles: plans.length,
+    mode,
+    threshold: thresholdNum,
+    concurrency: concurrencyNum,
+    cacheHits,
+    durationMs: Date.now() - t0,
+    plans: plans.map(p => ({
+      file: p.name,
+      source: p.source,
+      target: p.targetPath,
+      targetFolder: p.targetFolder,
+      heuristicTags: p.tags,
+      clipTags: p.clipTags,
+      dateFolder: p.dateFolder,
+      thumbnail: p.thumbnail,
+    })),
   };
 
-  console.log(chalk.bold('\n📊 Summary:'));
-  console.log(`  Total:     ${summary.total}`);
-  console.log(`  With tags: ${chalk.green(summary.withTags)}`);
-  console.log(`  Unsorted:  ${chalk.yellow(summary.unsorted)}`);
-  console.log(`  By-tag:    ${chalk.blue(summary.byTag)}`);
-  console.log(`  By-date:   ${chalk.blue(summary.byDate)}`);
+  const reportPath = path.join(output, '.photo-vault-report.json');
+  await fs.mkdir(output, { recursive: true });
+  await fs.writeFile(reportPath, JSON.stringify(report, null, 2));
 
-  // 6. 应用 / 报告
-  if (!dryRun) {
-    // 确认
-    const confirmed = await confirm(`\n⚠️  真的要移动 ${plans.length} 个文件吗？`);
-    if (!confirmed) {
-      console.log(chalk.yellow('已取消'));
-      return;
+  if (json && stream) {
+    resultEvent('organize', report);
+  } else if (!json) {
+    console.log(chalk.gray(`\n📄 报告已生成: ${reportPath}`));
+  }
+
+  // 6) 写缓存
+  if (!noCache) {
+    try { await saveCache(cachePath, cacheData); } catch (e) { err(`缓存写入失败: ${e}`); }
+  }
+
+  // 7) 执行移动
+  if (apply) {
+    if (!json) {
+      const confirmed = await confirm(`\n确定要移动这 ${plans.length} 个文件吗？`);
+      if (!confirmed) { console.log(chalk.gray('已取消操作。')); return; }
+    } else {
+      logEvent('info', `开始移动 ${plans.length} 个文件`);
     }
 
-    // 真移动
-    const moveSpinner = ora('Moving files...').start();
-    let moved = 0;
-    let failed = 0;
-
-    for (const plan of plans) {
+    let successCount = 0;
+    for (let i = 0; i < plans.length; i++) {
+      const plan = plans[i];
       try {
         await fs.mkdir(plan.targetFolder, { recursive: true });
         await fs.rename(plan.source, plan.targetPath);
-        moved++;
-      } catch (err) {
-        console.error(chalk.red(`Failed: ${plan.name}`), (err as Error).message);
-        failed++;
+        successCount++;
+        if (json && stream) {
+          progressEvent('move', i + 1, plans.length, plan.name);
+        }
+      } catch (e) {
+        err(`移动失败: ${plan.name} — ${e}`);
       }
     }
-
-    moveSpinner.succeed(`Moved ${moved} files${failed > 0 ? `, ${failed} failed` : ''}`);
-
-    // 写报告
-    const reportPath = path.join(outputDir, 'organize-report.json');
-    await fs.writeFile(reportPath, JSON.stringify({
-      timestamp: new Date().toISOString(),
-      folder,
-      output: outputDir,
-      mode,
-      summary,
-      plans,
-    }, null, 2), 'utf-8');
-    console.log(chalk.gray(`📄 Report: ${reportPath}`));
-  } else {
-    // 写 dry-run 报告
-    const reportPath = path.join(outputDir, 'organize-report.json');
-    await fs.mkdir(outputDir, { recursive: true });
-    await fs.writeFile(reportPath, JSON.stringify({
-      timestamp: new Date().toISOString(),
-      folder,
-      output: outputDir,
-      mode,
-      summary,
-      plans,
-      dryRun: true,
-    }, null, 2), 'utf-8');
-    console.log(chalk.gray(`\n📄 Report (dry-run): ${reportPath}`));
-    console.log(chalk.yellow('\n💡 Re-run with --apply to actually move files'));
+    say(chalk.green, `\n✅ 移动完成！成功移动 ${successCount}/${plans.length} 个文件`);
+  } else if (!json) {
+    console.log(chalk.yellow('\n📝 当前为 dry-run 模式'));
+    console.log(chalk.gray('   添加 --apply 参数可执行真实移动\n'));
   }
-}
 
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
+  // 关键：显式退出 + 清 handler
+  // 避免 sharp 异步 handle 被 GC 时报警告 + 确保 GUI 端能拿到 close 事件
+  process.off('uncaughtException', uncaughtHandler);
+  process.off('unhandledRejection', unhandledRejectionHandler);
+
+  // 给 stdout 100ms flush 时间，再优雅退出
+  if (json && stream) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    try { process.exit(0); } catch {}
   }
-}
-
-function confirm(question: string): Promise<boolean> {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise(resolve => {
-    rl.question(chalk.yellow(question + ' (y/N): '), answer => {
-      rl.close();
-      resolve(answer.trim().toLowerCase() === 'y');
-    });
-  });
 }

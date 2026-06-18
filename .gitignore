@@ -1,7 +1,56 @@
+# Dependencies
 node_modules/
+jspm_packages/
+
+# Build outputs
 dist/
+build/
+*.tsbuildinfo
+
+# Tauri / Rust
+gui/src-tauri/target/
+gui/src-tauri/gen/
+gui/src-tauri/Cargo.lock
+
+# Vite cache
+.vite/
+.cache/
+
+# Runtime outputs
 organized/
+output/
+
+# AI model cache (~1.2GB)
+models/
+
+# Test fixtures
+test-photos/
+test-*/
+/tmp/
+
+# OS / Editor
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env
 .env
 .env.local
+.env.*.local
+
+# OS garbage
+nul
+
+# Coverage
+coverage/
+.nyc_output/

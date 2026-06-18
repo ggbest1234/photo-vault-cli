@@ -5,6 +5,10 @@ export const IMAGE_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.heif',
 ]);
 
+export const SKIP_DIRS = new Set([
+  'node_modules', '$RECYCLE.BIN', 'System Volume Information',
+]);
+
 export type ScannedFile = {
   path: string;
   name: string;
@@ -13,10 +17,20 @@ export type ScannedFile = {
   mtime: Date;
 };
 
+export type ScanOptions = {
+  recursive?: boolean;
+  skip?: string[];
+};
+
 export async function scanFolder(
   folder: string,
-  recursive = true
+  options: ScanOptions | boolean = true
 ): Promise<ScannedFile[]> {
+  // 向后兼容：允许传 boolean（旧签名）
+  const recursive = typeof options === 'boolean' ? options : (options.recursive !== false);
+  const skip = typeof options === 'boolean' ? [] : (options.skip || []);
+  const skipSet = new Set([...SKIP_DIRS, ...skip]);
+
   const results: ScannedFile[] = [];
 
   async function walk(dir: string) {
@@ -31,9 +45,7 @@ export async function scanFolder(
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
 
-      // 跳过隐藏文件 + 系统目录
-      if (entry.name.startsWith('.') || entry.name === 'node_modules' ||
-          entry.name === '$RECYCLE.BIN' || entry.name === 'System Volume Information') {
+      if (entry.name.startsWith('.') || skipSet.has(entry.name)) {
         continue;
       }
 

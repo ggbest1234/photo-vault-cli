@@ -1,8 +1,8 @@
 /**
- * EXIF 提取 - 用 sharp（如果可用）
- * 提取 GPS / 相机型号 / 拍摄时间
+ * EXIF 提取 - 使用 exifr（纯 JS，无原生依赖，Windows 友好）
  */
-import sharp from 'sharp';
+// @ts-ignore
+import exifr from 'exifr';
 
 export type ExifData = {
   DateTimeOriginal?: string;
@@ -15,24 +15,21 @@ export type ExifData = {
 
 export async function extractExif(imagePath: string): Promise<ExifData | null> {
   try {
-    const metadata = await sharp(imagePath).metadata();
-    const exif = metadata.exif;
+    // @ts-ignore
+    const exif = await exifr.parse(imagePath, {
+      pick: ['DateTimeOriginal', 'Make', 'Model', 'GPSLatitude', 'GPSLongitude', 'Orientation']
+    });
+
     if (!exif) return null;
 
-    // sharp 返回 EXIF buffer，需要 exifr 解析
-    // 简化版：只提取 metadata 里直接的字段
-    const result: ExifData = {};
-
-    if (metadata.exif) {
-      // 用 sharp 的 raw metadata（不完整）
-      // 完整 EXIF 解析需要 exifr 包
-    }
-
-    if (metadata.orientation) {
-      result.Orientation = metadata.orientation;
-    }
-
-    return Object.keys(result).length > 0 ? result : null;
+    return {
+      DateTimeOriginal: exif.DateTimeOriginal,
+      Make: exif.Make,
+      Model: exif.Model,
+      GPSLatitude: exif.GPSLatitude,
+      GPSLongitude: exif.GPSLongitude,
+      Orientation: exif.Orientation
+    };
   } catch (err) {
     return null;
   }

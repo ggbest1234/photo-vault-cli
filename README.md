@@ -1,142 +1,122 @@
 # 📸 Photo Vault CLI
 
-> 用 CLIP AI 整理照片文件夹 · 支持 Windows / macOS / Linux
+> 本地 AI 照片自动整理工具 · 支持 Windows / macOS / Linux
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)]()
-[![Local First](https://img.shields.io/badge/local-first-orange.svg)]()
-
-## 🎯 解决什么
-
-桌面文件夹混乱：
-- 下载文件夹 1000+ 文件不会分类
-- 截图 / 相册散落各目录
-- 找不到某张特定照片
-
-Photo Vault CLI = **本地 CLIP + 自动归类 + 离线整理**
+![Status](https://img.shields.io/badge/status-beta-yellow) ![Version](https://img.shields.io/badge/version-0.5.0-blue) ![Node](https://img.shields.io/badge/node-%3E%3D20-green) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 ## ✨ 核心特性
 
-- 🔍 **递归扫描**：自动跳过系统目录（`$RECYCLE.BIN` / `.cache` / `node_modules`）
-- 🤖 **CLIP 自动标签**：本地 ViT-B/32 模型识别 Top-5 标签
-- 🏷️ **置信度阈值**：可调（默认 0.1）
-- 📁 **三种归类模式**：
-  - `--mode tag`：按标签（`by-tag/<tag>/`）
-  - `--mode date`：按年月（`by-date/<YYYY-MM>/`）
-  - `--mode both`：双轨（`by-tag/<tag>/<YYYY-MM>/`）
-- 🛡️ **Dry-run**：先看计划，不动文件
-- 📄 **报告输出**：每张文件的标签 + 归类去向（`.photo-vault-report.json`）
-- ⚠️ **冲突保护**：目标文件已存在自动重命名（`file_1.jpg`）
-- 🔒 **100% 本地**：模型 + 处理 + 标签，全在本地
+- 🔍 **递归扫描**：自动跳过系统文件夹
+- 🤖 **CLIP Large 模型**：更大更准的零样本图像识别
+- 🏷️ **四种归类模式**：combined / clip / heuristic / date
+- ⚡ **并行分析**：`--concurrency` 控制，CLIP 推理不再串行
+- 💾 **CLIP 推理缓存**：mtime+size hash 命中后零推理（同文件夹二次扫描 ~17× 加速）
+- 🛡️ **Dry-run 安全模式**：默认只预览，加 `--apply` 才移动
+- 📊 **清晰报告 + 实时进度**：JSON Lines 协议给 GUI
+- 🔒 **100% 本地运行**
 
 ## 🚀 快速开始
 
-### 1. 安装依赖
+### 1. 下载 CLIP Large 模型（约 400MB，国内镜像）
 
 ```bash
-cd photo-vault-cli
-npm install
+python download_model.py
 ```
 
-### 2. 下载 CLIP 模型（首次需要，~150 MB）
+### 2. 使用
 
 ```bash
-# 用 HF 国内镜像（避免 GFW）
-HF_ENDPOINT=https://hf-mirror.com python -c "
-import os
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-from huggingface_hub import snapshot_download
-path = snapshot_download(
-    repo_id='Xenova/clip-vit-base-patch32',
-    cache_dir='./models/clip-cache',
-    allow_patterns=['*.json', '*.txt', 'tokenizer.json', 'onnx/model_quantized.onnx']
-)
-print('模型路径:', path)
-"
+# 方式 A：开发态（无需编译，tsx 解释执行）
+npx tsx src/index.ts organize "你的文件夹" --mode combined --limit 20
 
-# 软链到 transformers 默认位置
-mkdir -p node_modules/@xenova/transformers/models/Xenova/clip-vit-base-patch32
-ln -s ../../../../../../models/clip-cache/models--Xenova--clip-vit-base-patch32/snapshots/*/* \
-      node_modules/@xenova/transformers/models/Xenova/clip-vit-base-patch32/ 2>/dev/null
+# 方式 B：编译后跑（生产/GUI 推荐）
+npm run build
+node dist/index.js organize "你的文件夹" --mode combined --limit 20
 
-# Windows 用 mklink 命令代替
+# Dry-run 预览（推荐先看效果）
+npx tsx src/index.ts organize "你的文件夹" --mode combined --limit 20
+
+# 真实执行
+npx tsx src/index.ts organize "你的文件夹" --apply
+
+# 加速：增大并发
+npx tsx src/index.ts organize "你的文件夹" --concurrency 4
+
+# 清理缓存重新跑
+npx tsx src/index.ts organize "你的文件夹" --no-cache
+
+# 搜索
+npx tsx src/index.ts search "你的文件夹" beach
 ```
 
-### 3. 扫描文件夹
+### 3. GUI 模式（--json --stream）
 
 ```bash
-npx tsx src/index.ts scan "C:\Users\Ryan\Downloads"
+npx tsx src/index.ts organize "你的文件夹" --json --stream
 ```
 
-### 4. 整理（先 dry-run 看效果）
-
-```bash
-# Dry run（不动文件）
-npx tsx src/index.ts organize "C:\Users\Ryan\Downloads" --dry-run
-
-# 真的移动文件
-npx tsx src/index.ts organize "C:\Users\Ryan\Downloads"
-
-# 只整理前 10 张（测试）
-npx tsx src/index.ts organize "C:\Users\Ryan\Downloads" --limit 10
-
-# 按日期归类
-npx tsx src/index.ts organize "C:\Users\Ryan\Downloads" --mode date
-
-# 双轨归类
-npx tsx src/index.ts organize "C:\Users\Ryan\Downloads" --mode both
-
-# 自定义输出目录
-npx tsx src/index.ts organize "C:\Users\Ryan\Downloads" --output "D:\Photos-Organized"
-
-# 自定义阈值（更严格）
-npx tsx src/index.ts organize "C:\Users\Ryan\Downloads" --threshold 0.2
-```
-
-### 5. Windows .exe 打包（v0.2.0 计划）
-
-```bash
-npm install -g pkg
-pkg . --targets node20-win-x64 --output photo-vault.exe
-# → photo-vault.exe 在 Windows 直接双击跑
-```
-
-## 🎯 标签候选列表（60+ 个）
-
-CLIP 候选标签分 7 大类：
+输出 JSON Lines 到 stdout，每行一个 event：
 
 ```
-- 室内：meeting / office / desk / laptop / book / notebook / phone / kitchen / restaurant / bedroom
-- 室外：street / city / building / sky / sunset / sunrise / beach / mountain / snow / rain / forest / park
-- 物体：food / coffee / tea / water / wine / fruit / plant / flower / tree / car / bike / dog / cat / bird
-- 人：people / selfie / group / family / friend / child / baby
-- 物品：paper / document / screen / art / painting / photo / computer / keyboard / mouse
-- 抽象：morning / afternoon / evening / night / spring / summer / autumn / winter
+{"type":"log","level":"info","message":"..."}
+{"type":"progress","phase":"analyze","current":1,"total":20,"file":"a.jpg"}
+{"type":"result","command":"organize","data":{...}}
 ```
 
-可编辑 `src/clip.ts` 里的 `CANDIDATE_LABELS` 自定义。
+GUI 端按行解析即可。详见 `../photo-vault-gui/`。
 
-## 📊 v0.1.0 完成度
+## 🧰 命令参考
 
-- [x] **CLI 骨架**：scan / organize 命令
-- [x] **文件扫描**：递归 + 系统目录跳过
-- [x] **CLIP 集成**：本地模型 + 60+ 候选标签
-- [x] **dry-run 模式**
-- [x] **三种归类模式**：tag / date / both
-- [x] **冲突保护**：自动重命名
-- [x] **报告输出**：JSON 格式
-- [x] **彩色输出**：chalk + ora
-- [ ] **启发式标签**：文件名 + 时间（待集成）
-- [ ] **EXIF 提取**：GPS / 相机型号
-- [ ] **学习机制**：用户偏好表
-- [ ] **Windows .exe 打包**（pkg）
-- [ ] **macOS / Linux .app / .deb**
-- [ ] **TUI 交互**：inquirer.js
+### `organize <folder>`
 
-## 🔗 关联项目
+| 选项 | 默认 | 说明 |
+|------|------|------|
+| `--mode` | `combined` | combined / clip / heuristic / date |
+| `--limit` | `0` | 限制文件数（0 = 全部） |
+| `--apply` | false | 真实移动（否则 dry-run） |
+| `--threshold` | `0.1` | CLIP 置信度阈值 |
+| `--concurrency` | `2` | 并行分析数（CLIP 推理吃 CPU） |
+| `--output` | `<folder>/organized` | 输出根目录 |
+| `--cache` | `<output>/.photo-vault-cache.json` | CLIP/heuristic 缓存路径 |
+| `--thumbs` | false | 为每个 plan 生成 base64 缩略图（GUI 预览用） |
+| `--thumb-size` | `240` | 缩略图边长 px |
+| `--thumb-cache` | `<output>/.thumb-cache` | 缩略图缓存目录 |
+| `--no-cache` | false | 禁用缓存 |
+| `--json` | false | GUI 模式（JSON Lines 输出） |
+| `--stream` | false | 与 --json 配合，输出进度事件 |
 
-- [photo-vault-pwa](../photo-vault-pwa/) — 手机 PWA 端（已上线 https://fableins.com）
-- [photo-vault](../photo-vault/) — 主仓 + Obsidian 插件
+### `search <folder> <query>`
 
-## 📜 License
+| 选项 | 默认 | 说明 |
+|------|------|------|
+| `--cache` | — | 复用 organize 生成的缓存 |
+| `--no-cache` | false | 禁用缓存 |
+| `--json` / `--stream` | false | 同 organize |
 
-MIT © Ryan
+### `scan <folder>`
+
+| 选项 | 默认 | 说明 |
+|------|------|------|
+| `--limit` | `0` | 限制文件数 |
+| `--json` / `--stream` | false | 同上 |
+
+## 📂 输出结构
+
+```
+<folder>/organized/
+├── by-tag/
+│   ├── photo/      # 启发式 / CLIP 识别的标签
+│   ├── banner/
+│   └── unsorted/   # 无标签兜底
+├── by-date/        # --mode date
+│   └── 2026-06/
+├── .photo-vault-report.json     # 整理计划
+└── .photo-vault-cache.json      # CLIP 推理缓存
+```
+
+## ⚙️ 缓存说明
+
+- 按 `文件路径 SHA1` 做 key，校验 `mtimeMs + size`
+- 文件未变 → 直接复用启发式 + CLIP 结果
+- 重复扫描同一文件夹几乎零成本
+- 整理/搜索都共享同一份缓存（路径通过 `--cache` 指定）
