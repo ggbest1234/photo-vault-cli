@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { organize } from './commands/organize.js';
-import { scan } from './commands/scan.js';
-import { search } from './commands/search.js';
-import { isModelDownloaded } from './clip.js';
-import { preloadSharp } from './thumbnail.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { organize } from './commands/organize.js';
+import { scan } from './commands/scan.js';
+import { search } from './commands/search.js';
+import { rollback } from './commands/rollback.js';
+import { isModelDownloaded } from './clip.js';
+import { preloadSharp } from './thumbnail.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
@@ -96,6 +97,29 @@ program
       thumbCache,
       concurrency: opts.concurrency,
       withClip: !!opts.withClip,
+    });
+  });
+
+program
+  .command('rollback <folder>')
+  .description('撤销 organize --apply 的文件移动（读 .photo-vault-report.json 反向 move）')
+  .option('--output <dir>', '整理输出根目录（默认与 <folder> 相同）', '<folder>')
+  .option('--report <path>', '自定义报告路径', '<output>/.photo-vault-report.json')
+  .option('--apply', '真实回滚（默认 dry-run 预览）')
+  .option('--conflict <strategy>', '源位置已有同名文件怎么办: skip / rename / overwrite', 'rename')
+  .option('--json', '输出 JSON Lines 协议（GUI 模式）')
+  .option('--stream', '流式输出进度事件（与 --json 配合）')
+  .action((folder, opts) => {
+    const output = opts.output === '<folder>' ? folder : opts.output;
+    const report = opts.report === '<output>/.photo-vault-report.json' ? join(output, '.photo-vault-report.json') : opts.report;
+    return rollback(folder, {
+      output,
+      report,
+      apply: !!opts.apply,
+      dryRun: !opts.apply,
+      conflict: opts.conflict,
+      json: !!opts.json,
+      stream: !!opts.stream,
     });
   });
 

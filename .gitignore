@@ -51,6 +51,9 @@ pnpm-debug.log*
 # OS garbage
 nul
 
+# Old GUI standalone (moved to gui/ subdirectory)
+photo-vault-gui/
+
 # Coverage
 coverage/
 .nyc_output/

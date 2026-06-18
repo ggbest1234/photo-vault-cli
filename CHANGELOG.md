@@ -5,6 +5,34 @@ All notable changes to Photo Vault will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-18 — Rollback Support
+
+### Added
+- **`rollback` 命令** — 撤销 `organize --apply` 的文件移动
+  - 读 `.photo-vault-report.json` 反向 move 文件回原位
+  - 三种冲突策略：`--conflict skip` / `rename` (默认) / `overwrite`
+  - 自动清理空的目标目录（含 `by-tag` / `by-date` 父目录）
+  - 写带时间戳的回退报告（`.photo-vault-rollback-<ts>.json`）
+  - Dry-run 预览模式
+  - 完整容错：源位置已有同名文件时自动重命名为 `xxx_rollbackN.ext`
+  - GUI 集成：Organize 结果页加 "↩️ 回滚这次" 按钮 + Rollback 结果视图
+- **JSON Lines 协议支持 rollback**（log / progress / result / error）
+- **进程级兜底**（与 organize / search 一致）：uncaughtException + process.exit
+- **CLI 命令完整列表**：
+  - `scan` — 扫描统计
+  - `organize` — 智能整理（4 模式）
+  - `search` — 标签/文件名搜索（带缩略图）
+  - `rollback` — 撤销整理（新增）
+
+### Verified
+- ✅ 3 文件 dry-run 预览：3 个还原计划
+- ✅ 3 文件 --apply：成功还原 + 自动清理空目录
+- ✅ `--json --stream` GUI 模式：result event 正常 + process.exit 触发
+- ✅ 冲突场景：源位置已有同名 → 自动 rename `photo1_rollback1.jpg`
+- ✅ 多轮回滚：第二次 target 已不存在 → 标记 missing-target 跳过
+
+---
+
 ## [0.5.0] - 2026-06-18 — Beta
 
 ### Added

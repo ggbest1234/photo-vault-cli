@@ -2,7 +2,7 @@
 
 > 本地 AI 照片自动整理工具 · 支持 Windows / macOS / Linux
 
-![Status](https://img.shields.io/badge/status-beta-yellow) ![Version](https://img.shields.io/badge/version-0.5.0-blue) ![Node](https://img.shields.io/badge/node-%3E%3D20-green) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+![Status](https://img.shields.io/badge/status-beta-yellow) ![Version](https://img.shields.io/badge/version-0.6.0-blue) ![Node](https://img.shields.io/badge/node-%3E%3D20-green) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 ## ✨ 核心特性
 
@@ -38,6 +38,10 @@ npx tsx src/index.ts organize "你的文件夹" --mode combined --limit 20
 
 # 真实执行
 npx tsx src/index.ts organize "你的文件夹" --apply
+
+# 后悔了？回滚（撤销刚才的 --apply）
+npx tsx src/index.ts rollback "你的文件夹/organized"           # 预览
+npx tsx src/index.ts rollback "你的文件夹/organized" --apply    # 真实回滚
 
 # 加速：增大并发
 npx tsx src/index.ts organize "你的文件夹" --concurrency 4

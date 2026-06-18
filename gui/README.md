@@ -2,7 +2,7 @@
 
 > Tauri 2 + React 19 桌面客户端，包装 photo-vault-cli
 
-![Status](https://img.shields.io/badge/status-beta-yellow) ![Version](https://img.shields.io/badge/version-0.5.0-blue) ![Tauri](https://img.shields.io/badge/Tauri-2-orange) ![React](https://img.shields.io/badge/React-19-61dafb)
+![Status](https://img.shields.io/badge/status-beta-yellow) ![Version](https://img.shields.io/badge/version-0.6.0-blue) ![Tauri](https://img.shields.io/badge/Tauri-2-orange) ![React](https://img.shields.io/badge/React-19-61dafb)
 
 ## ✨ 功能
 
