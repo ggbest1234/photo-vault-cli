@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { usePhotoVaultCli, type Progress, type ScanResult } from './usePhotoVaultCli';
+import { ImageModal, type ImageModalItem } from './ImageModal';
 import './App.css';
 
 type Tab = 'organize' | 'search';
@@ -11,7 +12,35 @@ function App() {
   const [tab, setTab] = useState<Tab>('organize');
   const [cliCwd, setCliCwd] = useState(DEFAULT_CLI_CWD);
 
+  // v0.8+: 大图查看 modal state
+  const [modalItems, setModalItems] = useState<ImageModalItem[]>([]);
+  const [modalIndex, setModalIndex] = useState(-1);
+
   const cli = usePhotoVaultCli(cliCwd);
+
+  const closeModal = () => setModalIndex(-1);
+
+  // v0.8+: 打开大图 modal — 接受 plan（organize）或 result（search）
+  const openImageModal = (
+    clicked: any,
+    list: any[]
+  ) => {
+    const items: ImageModalItem[] = list.map((p) => ({
+      file: p.file ?? p.name,
+      source: p.source ?? p.path,
+      target: p.target,
+      thumbnail: p.thumbnail,
+      dateFolder: p.dateFolder ?? 'unknown',
+      dateSource: p.dateSource,
+      heuristicTags: p.heuristicTags ?? p.tags ?? [],
+      clipTags: p.clipTags ?? p.clipScores ?? [],
+      matchType: p.matchType,
+      exif: p.exif ?? null,
+    }));
+    const idx = items.findIndex((it) => (it.file === (clicked.file ?? clicked.name)));
+    setModalItems(items);
+    setModalIndex(idx >= 0 ? idx : 0);
+  }
 
   return (
     <main className="container">
@@ -38,16 +67,30 @@ function App() {
         </div>
       </header>
 
-      {tab === 'organize' && <OrganizeTab cli={cli} />}
-      {tab === 'search' && <SearchTab cli={cli} />}
+      {tab === 'organize' && <OrganizeTab cli={cli} openImageModal={openImageModal} />}
+      {tab === 'search' && <SearchTab cli={cli} openImageModal={openImageModal} />}
 
       <RunPanel cli={cli} />
+
+      {/* v0.8+: 大图查看 modal */}
+      {modalIndex >= 0 && (
+        <ImageModal
+          items={modalItems}
+          currentIndex={modalIndex}
+          onClose={closeModal}
+          onNavigate={setModalIndex}
+        />
+      )}
     </main>
   );
 }
 
 /* ============== Organize ============== */
-function OrganizeTab({ cli }: { cli: ReturnType<typeof usePhotoVaultCli> }) {
+type TabModalProps = {
+  openImageModal: (clicked: any, list: any[]) => void;
+};
+
+function OrganizeTab({ cli, openImageModal }: { cli: ReturnType<typeof usePhotoVaultCli> } & TabModalProps) {
   const [folder, setFolder] = useState('');
   const [mode, setMode] = useState<'combined' | 'date' | 'clip' | 'heuristic'>('combined');
   const [limit, setLimit] = useState(0);
@@ -180,7 +223,7 @@ function OrganizeTab({ cli }: { cli: ReturnType<typeof usePhotoVaultCli> }) {
         {cli.state === 'running' ? '⏳ 运行中...' : apply ? '🚀 开始整理（会移动文件）' : '👀 预览整理计划'}
       </button>
 
-      {cli.organizeResult && <OrganizeResultView result={cli.organizeResult} cli={cli} />}
+      {cli.organizeResult && <OrganizeResultView result={cli.organizeResult} cli={cli} openImageModal={openImageModal} />}
       {cli.rollbackResult && <RollbackResultView result={cli.rollbackResult} />}
     </section>
   );
@@ -221,7 +264,7 @@ function ScanSummary({ scan, scanning }: { scan: ScanResult; scanning: boolean }
   );
 }
 
-function OrganizeResultView({ result, cli }: { result: NonNullable<ReturnType<typeof usePhotoVaultCli>['organizeResult']>; cli: ReturnType<typeof usePhotoVaultCli> }) {
+function OrganizeResultView({ result, cli, openImageModal }: { result: NonNullable<ReturnType<typeof usePhotoVaultCli>['organizeResult']>; cli: ReturnType<typeof usePhotoVaultCli>; openImageModal: (clicked: any, list: any[]) => void }) {
   const [filter, setFilter] = useState('');
   const [showThumbs, setShowThumbs] = useState(true);
   const visible = result.plans.filter((p) => !filter || p.targetFolder.includes(filter) || p.file.includes(filter));
@@ -271,7 +314,12 @@ function OrganizeResultView({ result, cli }: { result: NonNullable<ReturnType<ty
       />
       <div className={`plan-grid ${showThumbs ? 'with-thumbs' : 'list-only'}`}>
         {visible.slice(0, 200).map((p, i) => (
-          <div key={i} className="thumb-card" title={p.source + '\n→ ' + p.target}>
+          <div
+            key={i}
+            className="thumb-card clickable"
+            title={p.source + '\n→ ' + p.target + '\n（点击查看大图）'}
+            onClick={() => openImageModal(p, visible)}
+          >
             <div className="thumb-img-wrap">
               {showThumbs && p.thumbnail ? (
                 <img src={p.thumbnail.dataUrl} alt={p.file} loading="lazy" />
@@ -378,7 +426,7 @@ function RollbackResultView({ result }: { result: NonNullable<ReturnType<typeof 
 }
 
 /* ============== Search ============== */
-function SearchTab({ cli }: { cli: ReturnType<typeof usePhotoVaultCli> }) {
+function SearchTab({ cli, openImageModal }: { cli: ReturnType<typeof usePhotoVaultCli> } & TabModalProps) {
   const [folder, setFolder] = useState('');
   const [query, setQuery] = useState('');
   const [useCache, setUseCache] = useState(true);
@@ -458,12 +506,12 @@ function SearchTab({ cli }: { cli: ReturnType<typeof usePhotoVaultCli> }) {
         {cli.state === 'running' ? '⏳ 搜索中...' : '🔍 开始搜索'}
       </button>
 
-      {cli.searchResult && <SearchResultView result={cli.searchResult} />}
+      {cli.searchResult && <SearchResultView result={cli.searchResult} openImageModal={openImageModal} />}
     </section>
   );
 }
 
-function SearchResultView({ result }: { result: NonNullable<ReturnType<typeof usePhotoVaultCli>['searchResult']> }) {
+function SearchResultView({ result, openImageModal }: { result: NonNullable<ReturnType<typeof usePhotoVaultCli>['searchResult']>; openImageModal: (clicked: any, list: any[]) => void }) {
   const [showThumbs, setShowThumbs] = useState(true);
   const [matchFilter, setMatchFilter] = useState<'all' | 'filename' | 'tag'>('all');
   const filtered = result.results.filter(r => matchFilter === 'all' || r.matchType === matchFilter);
@@ -497,7 +545,12 @@ function SearchResultView({ result }: { result: NonNullable<ReturnType<typeof us
       ) : (
         <div className={`plan-grid ${showThumbs ? 'with-thumbs' : 'list-only'}`}>
           {filtered.slice(0, 200).map((r, i) => (
-            <div key={i} className="thumb-card" title={r.path}>
+            <div
+              key={i}
+              className="thumb-card clickable"
+              title={r.path + '\n（点击查看大图）'}
+              onClick={() => openImageModal(r, filtered)}
+            >
               <div className="thumb-img-wrap">
                 {showThumbs && r.thumbnail ? (
                   <img src={r.thumbnail.dataUrl} alt={r.name} loading="lazy" />
