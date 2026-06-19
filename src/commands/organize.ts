@@ -25,12 +25,13 @@ type OrganizeOptions = {
   skip?: string[];
   json?: boolean;
   stream?: boolean;
-  concurrency?: string;
   cache?: string;
   noCache?: boolean;
   thumbs?: boolean;
   thumbSize?: string;
   thumbCache?: string;
+  concurrency?: string;
+  profile?: boolean;          // v0.8+: 输出性能指标
 };
 
 type FilePlan = {
@@ -93,6 +94,31 @@ async function loadCache(cachePath: string): Promise<CacheFile> {
 async function saveCache(cachePath: string, cacheData: CacheFile): Promise<void> {
   await fs.mkdir(path.dirname(cachePath), { recursive: true });
   await fs.writeFile(cachePath, JSON.stringify(cacheData));
+}
+
+/**
+ * v0.8+: 收集性能指标（--profile）
+ *  返回内存峰值（MB）、CPU 时间
+ */
+function collectProfile(t0: number, total: number, cacheHits: number): {
+  wallMs: number;
+  cpuMs: number;
+  rssPeakMB: number;
+  cacheHitRate: string;
+  throughput: string;
+} {
+  const wall = Date.now() - t0;
+  const cpu = process.cpuUsage().user / 1000 + process.cpuUsage().system / 1000;
+  const rssMB = process.memoryUsage().rss / 1024 / 1024;
+  const hitRate = total > 0 ? ((cacheHits / total) * 100).toFixed(1) : '0';
+  const tps = wall > 0 ? (total / (wall / 1000)).toFixed(1) : '0';
+  return {
+    wallMs: wall,
+    cpuMs: Math.round(cpu),
+    rssPeakMB: Math.round(rssMB * 10) / 10,
+    cacheHitRate: `${hitRate}%`,
+    throughput: `${tps} files/s`,
+  };
 }
 
 function fileCacheKey(file: ScannedFile): string {
@@ -164,6 +190,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
   const thumbs = options.thumbs ?? false;
   const thumbSize = parseInt(options.thumbSize ?? '240', 10);
   const thumbCachePath = options.thumbCache ?? path.join(output, '.thumb-cache');
+  const profile = options.profile ?? false;       // v0.8+: 输出性能指标
 
   const thresholdNum = parseFloat(threshold);
   const limitNum = parseInt(limitOpt, 10);
@@ -369,7 +396,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
   }
 
   // 5) 写报告
-  const report = {
+  const report: any = {
     timestamp: new Date().toISOString(),
     sourceFolder: folder,
     outputFolder: output,
@@ -395,7 +422,24 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
 
   const reportPath = path.join(output, '.photo-vault-report.json');
   await fs.mkdir(output, { recursive: true });
+
+  // v0.8+: --profile 性能指标
+  let profileData: any = null;
+  if (profile) {
+    profileData = collectProfile(t0, plans.length, cacheHits);
+    report.profile = profileData;
+  }
+
   await fs.writeFile(reportPath, JSON.stringify(report, null, 2));
+
+  if (profile && !json) {
+    console.log(chalk.gray(`\n📊 Profile:`));
+    console.log(chalk.gray(`  Wall time:    ${(profileData.wallMs / 1000).toFixed(2)}s`));
+    console.log(chalk.gray(`  CPU time:     ${profileData.cpuMs}ms`));
+    console.log(chalk.gray(`  Peak RSS:     ${profileData.rssPeakMB} MB`));
+    console.log(chalk.gray(`  Cache hit:    ${profileData.cacheHitRate} (${cacheHits}/${plans.length})`));
+    console.log(chalk.gray(`  Throughput:   ${profileData.throughput}`));
+  }
 
   if (json && stream) {
     resultEvent('organize', report);

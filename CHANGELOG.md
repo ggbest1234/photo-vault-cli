@@ -5,6 +5,45 @@ All notable changes to Photo Vault will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-06-19 — Performance & HEIC
+
+### Added
+- **`--profile` flag** — 输出性能指标：
+  - Wall time（总耗时）
+  - CPU time（用户+系统）
+  - Peak RSS（峰值内存 MB）
+  - Cache hit rate（缓存命中率）
+  - Throughput（每秒处理文件数）
+- 完整大规模性能测试（v0.8 GA 前必需）：
+  - **1000 张 JPG 测试**：~10s 首次扫描，**87 MB 峰值内存**（非常低）
+  - **Cache 命中**：1000 张 ~0.1s，**10870 files/s**（**115× 加速**）
+- HEIC 文件 graceful degradation（不崩）：
+  - 文件被正确归类（heuristic 模式）
+  - EXIF 解析失败时静默 fallback 到 mtime
+  - 缩略图失败时跳过（不影响 plan）
+  - **已知限制**：sharp 0.33.5 的 libheif 较老，HEIC 缩略图/EXIF 不能完整支持（**v0.9.0 解决**）
+
+### Verified
+- ✅ 1000 张 PNG/JPG 大规模：87 MB 内存，95 files/s 首次 / 10870 files/s cache
+- ✅ 真实 HEIC 文件（pillow-heif 生成）：文件被处理，错误不阻塞
+- ✅ `--profile` 输出一致（人类可读 + JSON `report.profile` 字段）
+- ✅ CLI / GUI 编译干净
+- ✅ 损坏文件 / 空文件 / 0 字节文件都安全跳过
+
+### Performance Benchmarks
+| 文件数 | 首次扫描 | Cache 命中 | 峰值 RSS |
+|--------|----------|------------|----------|
+| 30 | 0.3s | 0.3s | 51 MB |
+| 1000 | 10.7s | 0.09s | 87 MB |
+| 10000 (估算) | ~110s | ~1s | ~150 MB |
+
+### Known Limitations (for 1.0.0)
+- HEIC 缩略图/EXIF 不完整（sharp libheif 旧版本）
+- CLIP 模型首次加载 ~10s（ONNX 运行时）
+- 没有 prebuilt binary（用户需自己 build）
+
+---
+
 ## [0.7.0] - 2026-06-19 — EXIF Time-aware
 
 ### Added

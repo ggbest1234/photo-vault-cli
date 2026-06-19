@@ -48,6 +48,7 @@ program
   .option('--thumbs', '为每个 plan 生成 base64 缩略图（GUI 预览用）')
   .option('--thumb-size <n>', '缩略图边长 px', '240')
   .option('--thumb-cache <dir>', '缩略图缓存目录', '<output>/.thumb-cache')
+  .option('--profile', '输出性能指标（wall time / CPU / RSS / cache hit / throughput）')
   .option('--json', '输出 JSON Lines 协议（GUI 模式）')
   .option('--stream', '流式输出进度事件（与 --json 配合）')
   .action((folder, opts) => {
@@ -66,6 +67,7 @@ program
       thumbs: !!opts.thumbs,
       thumbSize: opts.thumbSize,
       thumbCache,
+      profile: !!opts.profile,
       json: !!opts.json,
       stream: !!opts.stream,
     });
