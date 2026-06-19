@@ -70,7 +70,7 @@ export type ThumbnailResult = {
   width: number;
   height: number;
   bytes: number;
-  source: 'exif' | 'resize' | 'cache';
+  source: 'exif' | 'resize' | 'cache' | 'heic-decode';
   tookMs: number;
 };
 
@@ -183,7 +183,46 @@ export async function makeThumbnail(
     }
   }
 
-  // 3) sharp fallback
+  // 3) HEIC fallback（v0.9: 用 heic-decode 替代 sharp 处理 HEIF）
+  // sharp 0.35 自带的 libheif 较老，无法解码真实 iPhone HEIC 文件
+  // heic-decode 是 libheif-js 包装的纯 JS + WASM 实现，无需系统依赖
+  if (/\.(heic|heif)$/i.test(imagePath)) {
+    try {
+      const { default: decodeHeic } = await import('heic-decode');
+      const fileBuf = await fs.readFile(imagePath);
+      const t1 = Date.now();
+      const { width, height, data } = await decodeHeic({ buffer: fileBuf });
+      const sharpLib = await getSharp();
+      if (sharpLib) {
+        // data 是 RGBA buffer，转成 sharp raw 处理
+        const compressed = await sharpLib(Buffer.from(data.buffer), {
+          raw: { width, height, channels: 4 }
+        })
+          .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality, mozjpeg: true })
+          .toBuffer();
+        const meta = await sharpLib(compressed).metadata().catch(() => null);
+        if (!noCache) {
+          try {
+            await fs.mkdir(cacheDir, { recursive: true });
+            await fs.writeFile(cachePath, compressed);
+          } catch {}
+        }
+        return {
+          dataUrl: toDataUrl(compressed),
+          width: meta?.width || width,
+          height: meta?.height || height,
+          bytes: compressed.length,
+          source: 'heic-decode',  // v0.9+: 新源类型标识
+          tookMs: Date.now() - t0,
+        };
+      }
+    } catch (e) {
+      // HEIC decode 失败，fall through 到 sharp 尝试
+    }
+  }
+
+  // 4) sharp fallback
   const sharpLib = await getSharp();
   if (!sharpLib) {
     return null;  // sharp 不可用，GUI 显示占位

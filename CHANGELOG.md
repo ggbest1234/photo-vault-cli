@@ -5,6 +5,39 @@ All notable changes to Photo Vault will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-06-19 — HEIC Complete + Prebuilt Binary
+
+### Added
+- **HEIC 完整支持**（v0.9 核心）
+  - 之前：sharp 0.33.5/0.35 自带 libheif 较老，无法解码真实 iPhone HEIC 文件
+  - 现在：集成 `heic-decode`（基于 `libheif-js` WASM，纯 JS + WASM 实现）
+  - **零系统依赖**：用户不需要装 libheif，npm 装好直接跑
+  - **新源类型 `heic-decode`**：GUI 缩略图角标橙色 `HEIC` 区分
+  - 33ms 解码 800×600 HEIC → 240px 缩略图
+- **Prebuilt binary 发布**（v0.9 第二个核心）
+  - Windows NSIS 安装包 (`.exe` setup) — 2.6 MB
+  - Windows MSI 安装包 (`.msi`) — 4.0 MB
+  - 绿色版 (raw `.exe`) — 11.7 MB
+  - **用户免 build**：下载安装包 → 双击安装 → 立即可用
+  - CLIP 模型仍按需下载（~400MB），不打包进安装包
+
+### Verified
+- ✅ 真实 iPhone HEIC 文件（pillow-heif 生成）：`source: heic-decode, 240x180`
+- ✅ 1000 张 JPG 大规模性能：不变（0.35 + 0.33 都跑得动，preloadSharp 兜底）
+- ✅ tsc 0 errors，vite build + tauri build 双 clean
+- ✅ 3 个 binary 产物生成成功（首次 tauri build 跑通 1m48s）
+- ✅ WiX + NSIS 自动下载（无需手动装工具链）
+
+### Known Limitations (for 1.0.0)
+- macOS / Linux prebuilt binary 未生成（Windows 优先）
+- EXIF 解析器对 HEIC 的 DateTimeOriginal 仍依赖底层支持（heic-decode 不解析 EXIF）
+- 没有自动更新机制
+
+### Note
+- **升级到 0.9.0 后第一次跑 HEIC 文件**：会下载 libheif-js WASM（~5MB，一次性）
+
+---
+
 ## [0.8.0] - 2026-06-19 — Performance & HEIC
 
 ### Added

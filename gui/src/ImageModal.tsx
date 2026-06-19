@@ -13,7 +13,7 @@ export type ImageModalItem = {
   file: string;
   source: string;
   target?: string;
-  thumbnail?: { dataUrl: string; width: number; height: number; source: 'exif' | 'resize' | 'cache' };
+  thumbnail?: { dataUrl: string; width: number; height: number; source: 'exif' | 'resize' | 'cache' | 'heic-decode' };
   dateFolder: string;
   dateSource?: 'exif' | 'mtime';
   heuristicTags: string[];
@@ -120,7 +120,7 @@ export function ImageModal({ items, currentIndex, onClose, onNavigate }: ImageMo
                 <div className="modal-row">
                   <span className="modal-label">来源:</span>
                   <span className={`thumb-src-badge src-${item.thumbnail.source}`}>
-                    {item.thumbnail.source === 'exif' ? 'EXIF 嵌入' : item.thumbnail.source === 'cache' ? '缓存' : 'sharp 缩放'}
+                    {item.thumbnail.source === 'exif' ? 'EXIF 嵌入' : item.thumbnail.source === 'cache' ? '缓存' : item.thumbnail.source === 'heic-decode' ? 'HEIC 解码' : 'sharp 缩放'}
                   </span>
                 </div>
                 <div className="modal-row">

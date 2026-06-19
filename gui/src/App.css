@@ -260,6 +260,7 @@ input[type="range"] { width: 100%; padding: 0; }
 .thumb-src-badge.src-exif { background: rgba(40, 167, 69, 0.85); }
 .thumb-src-badge.src-resize { background: rgba(0, 123, 255, 0.75); }
 .thumb-src-badge.src-cache { background: rgba(108, 117, 125, 0.75); }
+.thumb-src-badge.src-heic-decode { background: rgba(255, 87, 34, 0.85); }  /* v0.9+ HEIC 解码橙色 */
 
 /* v0.7+: 日期来源徽章（左上角，区别于缩略图源） */
 .date-source-badge {

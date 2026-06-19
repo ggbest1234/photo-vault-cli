@@ -330,7 +330,7 @@ function OrganizeResultView({ result, cli, openImageModal }: { result: NonNullab
               )}
               {showThumbs && p.thumbnail && (
                 <span className={`thumb-src-badge src-${p.thumbnail.source}`} title={`缩略图源: ${p.thumbnail.source}`}>
-                  {p.thumbnail.source === 'exif' ? 'EXIF' : p.thumbnail.source === 'cache' ? 'CACHE' : 'JPG'}
+                  {p.thumbnail.source === 'exif' ? 'EXIF' : p.thumbnail.source === 'cache' ? 'CACHE' : p.thumbnail.source === 'heic-decode' ? 'HEIC' : 'JPG'}
                 </span>
               )}
               {/* v0.7+: 日期来源徽章（左上角，跟 EXIF thumb 区分） */}

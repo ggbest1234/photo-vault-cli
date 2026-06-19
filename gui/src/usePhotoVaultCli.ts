@@ -51,7 +51,7 @@ export type OrganizeResult = {
       dataUrl: string;
       width: number;
       height: number;
-      source: 'exif' | 'resize' | 'cache';
+      source: 'exif' | 'resize' | 'cache' | 'heic-decode';   // v0.9+
     };
   }>;
 };
@@ -69,7 +69,7 @@ export type SearchResult = {
       dataUrl: string;
       width: number;
       height: number;
-      source: 'exif' | 'resize' | 'cache';
+      source: 'exif' | 'resize' | 'cache' | 'heic-decode';   // v0.9+
     };
   }>;
 };
