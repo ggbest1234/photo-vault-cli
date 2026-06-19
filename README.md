@@ -45,6 +45,8 @@
 - JSON Lines 协议（CLI↔GUI 通信）
 - 4 大命令：`scan` / `organize` / `search` / `rollback`（rollback 是 0.6 加的）
 
+> 完整使用指南（含安装、首次使用、进阶、FAQ）见 [USAGE.md](USAGE.md)。
+
 ## 🚀 快速开始
 
 ### 1. 下载 CLIP Large 模型（约 400MB，国内镜像）

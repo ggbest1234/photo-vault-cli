@@ -54,6 +54,8 @@ UI 更新进度/结果
 - 能力配置（`src-tauri/capabilities/default.json`）只允许 `npx` 这一个程序，args 任意
 - Rust 侧零自定义命令，纯前端控制
 
+> 完整使用指南（首次使用、CLI 路径配置、debug 等）见 [../USAGE.md](../USAGE.md)。
+
 ## 🚀 开发
 
 ```bash
