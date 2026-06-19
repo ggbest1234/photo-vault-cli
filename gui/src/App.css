@@ -138,6 +138,23 @@ input[type="range"] { width: 100%; padding: 0; }
 .thumb-src-badge.src-resize { background: rgba(0, 123, 255, 0.75); }
 .thumb-src-badge.src-cache { background: rgba(108, 117, 125, 0.75); }
 
+/* v0.7+: 日期来源徽章（左上角，区别于缩略图源） */
+.date-source-badge {
+  position: absolute; top: 4px; left: 4px;
+  background: rgba(40, 167, 69, 0.95); color: white;
+  font-size: 0.55rem; padding: 0.1rem 0.35rem; border-radius: 3px;
+  font-weight: 600; letter-spacing: 0.3px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.date-source-badge.ds-exif { background: rgba(40, 167, 69, 0.95); }
+.date-source-badge.ds-mtime { background: rgba(255, 193, 7, 0.85); color: #1a1a1a; }
+
+.thumb-date {
+  color: #555; font-size: 0.68rem; margin-top: 0.1rem;
+  font-family: 'Consolas', monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 .thumb-meta { padding: 0.4rem 0.5rem; font-size: 0.75rem; }
 .thumb-name {
   font-weight: 600; color: #333;
@@ -217,6 +234,15 @@ input[type="range"] { width: 100%; padding: 0; }
 }
 .slow-option { background: #fff8e6; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid #ffe58f; }
 .slow-option input[type="checkbox"] { accent-color: #faad14; }
+
+/* Rollback */
+.rollback-btn { background: #ffe6e6; color: #c92a2a; }
+.rollback-btn:hover { background: #c92a2a; color: white; }
+.rollback-summary {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;
+  background: #f8f9fa; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.75rem;
+}
+.rollback-summary .stat-value { font-size: 1.25rem; }
 
 .muted { color: #999; font-size: 0.85rem; padding: 0.5rem; text-align: center; }
 

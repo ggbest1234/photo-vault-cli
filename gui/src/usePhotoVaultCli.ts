@@ -37,7 +37,16 @@ export type OrganizeResult = {
     targetFolder: string;
     heuristicTags: string[];
     clipTags: Array<{ label: string; score: number }>;
-    dateFolder: string;
+    dateFolder: string;                          // yyyy-MM-dd
+    dateSource?: 'exif' | 'mtime';               // v0.7+
+    exif?: {                                      // v0.7+
+      DateTimeOriginal?: string;
+      Make?: string;
+      Model?: string;
+      GPSLatitude?: number;
+      GPSLongitude?: number;
+      Orientation?: number;
+    } | null;
     thumbnail?: {
       dataUrl: string;
       width: number;
@@ -65,6 +74,32 @@ export type SearchResult = {
   }>;
 };
 
+export type RollbackResult = {
+  timestamp: string;
+  rolledBackAt: string;
+  outputFolder: string;
+  conflictStrategy: 'skip' | 'rename' | 'overwrite';
+  actions: Array<{
+    file: string;
+    from: string;
+    to: string;
+    action: 'restore' | 'skip' | 'overwrite' | 'rename' | 'missing-target' | 'source-exists' | 'same-location';
+    error?: string;
+  }>;
+  stats: {
+    restore: number;
+    rename: number;
+    overwrite: number;
+    skip: number;
+    missing: number;
+    same: number;
+    errors: number;
+    cleanedDirs: number;
+  };
+  success?: number;
+  fail?: number;
+};
+
 export type ScanResult = {
   folder: string;
   total: number;
@@ -82,6 +117,7 @@ export function usePhotoVaultCli(cliCwd: string) {
   const [organizeResult, setOrganizeResult] = useState<OrganizeResult | null>(null);
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [rollbackResult, setRollbackResult] = useState<RollbackResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const cancelledRef = useRef(false);
@@ -97,6 +133,7 @@ export function usePhotoVaultCli(cliCwd: string) {
     setOrganizeResult(null);
     setSearchResult(null);
     setScanResult(null);
+    setRollbackResult(null);
     setErrorMsg(null);
   }, []);
 
@@ -232,6 +269,20 @@ export function usePhotoVaultCli(cliCwd: string) {
     [run]
   );
 
+  const runRollback = useCallback(
+    async (opts: { folder: string; apply: boolean; conflict: 'skip' | 'rename' | 'overwrite' }) => {
+      const data = (await run([
+        'rollback',
+        opts.folder,
+        opts.apply ? '--apply' : '',
+        `--conflict ${opts.conflict}`,
+      ])) as RollbackResult | null;
+      if (data) setRollbackResult(data);
+      return data;
+    },
+    [run]
+  );
+
   return {
     state,
     progress,
@@ -240,9 +291,11 @@ export function usePhotoVaultCli(cliCwd: string) {
     organizeResult,
     searchResult,
     scanResult,
+    rollbackResult,
     runOrganize,
     runSearch,
     runScan,
+    runRollback,
     reset,
   };
 }

@@ -5,6 +5,45 @@ All notable changes to Photo Vault will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-06-19 — EXIF Time-aware
+
+### Added
+- **EXIF DateTimeOriginal 优先归类**（v0.7 核心）
+  - 之前：所有照片按文件修改时间（mtime）归类 → 网盘下载/复制后时间不准
+  - 现在：先用 EXIF `DateTimeOriginal`（拍摄时间），fallback 到 mtime
+  - 完整 EXIF 解析：支持 `2024:01:15 14:30:45` EXIF 原格式和 ISO 8601
+  - 容错：EXIF 损坏/缺失/解析失败时静默 fallback
+- **日期来源徽章**（GUI）
+  - 左上角绿色 `📷 EXIF` = 用拍摄时间（准确）
+  - 左上角黄色 `🕐 mtime` = fallback 到文件修改时间
+  - 一眼看出哪些图被正确归类到拍摄日期
+- **by-date 模式子目录升级**：`yyyy-MM/yyyy-MM-dd/`（按天细分）
+- **完整 EXIF 数据透传**到 result event
+  - `exif.Make` / `exif.Model`（相机信息）
+  - `exif.GPSLatitude` / `exif.GPSLongitude`（位置）
+  - GUI 可在后续版本显示这些元数据
+- **Cache schema 升级**（v1 → v2）
+  - 加入 `exifDateMs` 字段（EXIF 解析结果）
+  - 旧 v1 cache 自动 invalid（用户重跑一次即可）
+  - 不破坏 v0.6 文件移动结果（rollback 仍兼容）
+
+### Changed
+- `dateFolder` 字段从 `yyyy-MM` → `yyyy-MM-dd`（更细粒度）
+- by-date 模式目录结构从 `2026-06/` → `2026-06/2026-06-19/`（按天）
+
+### Verified
+- ✅ 3 张带 EXIF 测试图（2024-01-15 / 2024-06-20 / 2024-12-31）：正确归到对应日期
+- ✅ 1 张无 EXIF 图：fallback 到 mtime，dateSource=mtime
+- ✅ 缓存命中：第二次跑相同文件，EXIF 时间从 cache 读，不重复解析
+- ✅ parseExifDate 单测：EXIF 格式 / ISO 格式 / Date 对象 / null / 非法值全覆盖
+- ✅ CLI 编译干净，GUI 编译干净
+
+### Note
+- **Cache invalid 提示**：升级到 0.7.0 后第一次跑任何文件夹，会重跑所有文件
+  （因为 v1 → v2 cache schema 不兼容）。第二次开始就秒出。
+
+---
+
 ## [0.6.0] - 2026-06-18 — Rollback Support
 
 ### Added

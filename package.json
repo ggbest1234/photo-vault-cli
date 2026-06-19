@@ -1,6 +1,6 @@
 {
   "name": "photo-vault-cli",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "CLI tool for organizing photo folders using CLIP AI tagging",
   "type": "module",
   "main": "dist/index.js",

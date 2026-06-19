@@ -10,7 +10,7 @@ import { createInterface } from 'readline';
 import pLimit from 'p-limit';
 import { scanFolder, type ScannedFile } from '../scanner.js';
 import { clipTag, type ClipTag, isModelDownloaded } from '../clip.js';
-import { extractExif } from '../exif.js';
+import { extractExif, type ExifData } from '../exif.js';
 import { heuristicTag } from '../heuristics.js';
 import { makeThumbnail } from '../thumbnail.js';
 import { emit, logEvent, progressEvent, resultEvent, errorEvent } from '../protocol.js';
@@ -40,8 +40,9 @@ type FilePlan = {
   clipTags: ClipTag[];
   targetFolder: string;
   targetPath: string;
-  dateFolder: string;
-  exif: any;
+  dateFolder: string;                    // yyyy-MM-dd（GUI 显示）
+  dateSource?: 'exif' | 'mtime';         // v0.7+: 日期来源（EXIF 优先）
+  exif: ExifData | null;                 // v0.7+: 完整 EXIF（GUI 可展示相机型号等）
   thumbnail?: {
     dataUrl: string;
     width: number;
@@ -70,16 +71,23 @@ async function confirm(message: string): Promise<boolean> {
 
 /* ---------------- 缓存 ---------------- */
 
-type CacheEntry = { mtimeMs: number; size: number; tags: string[]; clipTags: ClipTag[] };
-type CacheFile = { version: 1; entries: Record<string, CacheEntry> };
+type CacheEntry = {
+  mtimeMs: number;
+  size: number;
+  exifDateMs?: number;     // v0.7+: EXIF DateTimeOriginal 时间戳（用于 dateFolder）
+  tags: string[];
+  clipTags: ClipTag[];
+};
+type CacheFile = { version: 2; entries: Record<string, CacheEntry> };
 
 async function loadCache(cachePath: string): Promise<CacheFile> {
   try {
     const buf = await fs.readFile(cachePath, 'utf-8');
     const parsed = JSON.parse(buf);
-    if (parsed?.version === 1) return parsed as CacheFile;
+    // v0.7 起 version 升到 2（加入 exifDateMs 字段），旧 v1 cache 不兼容
+    if (parsed?.version === 2) return parsed as CacheFile;
   } catch {}
-  return { version: 1, entries: {} };
+  return { version: 2, entries: {} };
 }
 
 async function saveCache(cachePath: string, cacheData: CacheFile): Promise<void> {
@@ -89,6 +97,38 @@ async function saveCache(cachePath: string, cacheData: CacheFile): Promise<void>
 
 function fileCacheKey(file: ScannedFile): string {
   return crypto.createHash('sha1').update(file.path).digest('hex');
+}
+
+/**
+ * 解析 EXIF DateTimeOriginal 字符串 → Date
+ * exifr 输出格式可能是：
+ *   - "2024:01:15 14:30:45" (EXIF 原始格式)
+ *   - Date 对象（如果配置了）
+ * 失败返回 null，调用方 fallback 到 mtime
+ */
+function parseExifDate(value: any): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'string') {
+    // EXIF 原格式: "YYYY:MM:DD HH:MM:SS"
+    const normalized = value.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
+    const d = new Date(normalized);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+/**
+ * 从 Date 提取 yyyy-MM / yyyy-MM-dd 字符串
+ */
+function formatDate(date: Date, granularity: 'month' | 'day' = 'day'): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  if (granularity === 'month') return `${y}-${m}`;
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 /* ---------------- 主流程 ---------------- */
@@ -155,7 +195,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
   if (limitNum > 0) files.splice(limitNum);
 
   // 2) 加载缓存
-  const cacheData: CacheFile = noCache ? { version: 1, entries: {} } : await loadCache(cachePath);
+  const cacheData: CacheFile = noCache ? { version: 2, entries: {} } : await loadCache(cachePath);
   let cacheHits = 0;
 
   // 3) 并行分析
@@ -172,15 +212,31 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
       const cached = cacheData.entries[key];
       let heuristicTags: string[] = [];
       let filteredClip: ClipTag[] = [];
+      let exifDateMs: number | undefined = undefined;
+      let exif: ExifData | null = null;
+      let dateSource: 'exif' | 'mtime' = 'mtime';
 
+      // 缓存命中条件：mtime + size 都没变
+      // 注：exifDateMs 是从 EXIF 解析出来的，不直接进 cache key（EXIF 时间理论上不会改）
+      // 但如果 EXIF 损坏前后不同，cache 命中会复用旧 dateSource（最稳）
       if (cached && cached.mtimeMs === file.mtime.getTime() && cached.size === file.size) {
         heuristicTags = cached.tags;
         filteredClip = cached.clipTags;
+        exifDateMs = cached.exifDateMs;
+        if (exifDateMs) {
+          dateSource = 'exif';
+        }
         cacheHits++;
       } else {
         try {
-          const exif = await extractExif(file.path);
+          exif = await extractExif(file.path);
           heuristicTags = isHeuristicMode(mode) ? await heuristicTag(file, exif) : [];
+          // 解析 EXIF DateTimeOriginal
+          const exifDate = parseExifDate(exif?.DateTimeOriginal);
+          if (exifDate) {
+            exifDateMs = exifDate.getTime();
+            dateSource = 'exif';
+          }
         } catch (e) {
           if (json && stream) errorEvent(`EXIF/heuristic failed for ${file.name}: ${e}`);
         }
@@ -195,6 +251,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
         cacheData.entries[key] = {
           mtimeMs: file.mtime.getTime(),
           size: file.size,
+          exifDateMs,
           tags: heuristicTags,
           clipTags: filteredClip,
         };
@@ -204,16 +261,25 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
         ? heuristicTags[0]
         : (filteredClip[0]?.label || null);
 
-      const date = new Date(file.mtime);
-      const yyyyMm = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      // 日期归类：EXIF 优先（拍摄时间），fallback 到 mtime
+      // 注意：mtime 仍可作为 cache key（因为文件被改 mtime 就变，cache 自动失效）
+      const date = exifDateMs ? new Date(exifDateMs) : new Date(file.mtime);
+      const yyyyMm = formatDate(date, 'month');
+      const yyyyMmDd = formatDate(date, 'day');
 
       let targetFolder: string;
+      let dateFolder: string;
       if (isDateMode(mode)) {
-        targetFolder = path.join(output, 'by-date', yyyyMm);
+        // by-date 模式：按 yyyy-MM-dd 子目录
+        targetFolder = path.join(output, 'by-date', yyyyMm, yyyyMmDd);
+        dateFolder = `${yyyyMm}/${yyyyMmDd}`;
       } else if (primaryTag) {
+        // by-tag 模式：dateFolder 仍记录 EXIF 时间（用于 GUI 显示）
         targetFolder = path.join(output, 'by-tag', primaryTag);
+        dateFolder = yyyyMmDd;
       } else {
         targetFolder = path.join(output, 'by-tag', 'unsorted');
+        dateFolder = yyyyMmDd;
       }
 
       let targetPath = path.join(targetFolder, file.name);
@@ -232,8 +298,9 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
         clipTags: filteredClip,
         targetFolder,
         targetPath,
-        dateFolder: yyyyMm,
-        exif: null,
+        dateFolder,
+        dateSource,                    // v0.7 新增：日期来源（GUI 用）
+        exif: exif ?? null,           // v0.7 新增：完整 EXIF（GUI 可展示相机型号等）
       };
 
       // 缩略图（开启时）— 单图失败不阻塞其他
@@ -319,7 +386,9 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
       targetFolder: p.targetFolder,
       heuristicTags: p.tags,
       clipTags: p.clipTags,
-      dateFolder: p.dateFolder,
+      dateFolder: p.dateFolder,           // yyyy-MM-dd（GUI 显示）
+      dateSource: p.dateSource,           // v0.7+: 'exif' | 'mtime'
+      exif: p.exif,                       // v0.7+: 完整 EXIF
       thumbnail: p.thumbnail,
     })),
   };

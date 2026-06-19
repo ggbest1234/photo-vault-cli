@@ -180,7 +180,8 @@ function OrganizeTab({ cli }: { cli: ReturnType<typeof usePhotoVaultCli> }) {
         {cli.state === 'running' ? '⏳ 运行中...' : apply ? '🚀 开始整理（会移动文件）' : '👀 预览整理计划'}
       </button>
 
-      {cli.organizeResult && <OrganizeResultView result={cli.organizeResult} />}
+      {cli.organizeResult && <OrganizeResultView result={cli.organizeResult} cli={cli} />}
+      {cli.rollbackResult && <RollbackResultView result={cli.rollbackResult} />}
     </section>
   );
 }
@@ -220,7 +221,7 @@ function ScanSummary({ scan, scanning }: { scan: ScanResult; scanning: boolean }
   );
 }
 
-function OrganizeResultView({ result }: { result: NonNullable<ReturnType<typeof usePhotoVaultCli>['organizeResult']> }) {
+function OrganizeResultView({ result, cli }: { result: NonNullable<ReturnType<typeof usePhotoVaultCli>['organizeResult']>; cli: ReturnType<typeof usePhotoVaultCli> }) {
   const [filter, setFilter] = useState('');
   const [showThumbs, setShowThumbs] = useState(true);
   const visible = result.plans.filter((p) => !filter || p.targetFolder.includes(filter) || p.file.includes(filter));
@@ -240,6 +241,17 @@ function OrganizeResultView({ result }: { result: NonNullable<ReturnType<typeof 
           title="切换缩略图"
         >
           {showThumbs ? '🖼️ 隐藏缩略图' : '🖼️ 显示缩略图'}
+        </button>
+        <button
+          className="thumb-toggle rollback-btn"
+          onClick={() => {
+            if (confirm(`确定要回滚这次整理吗？\n\n会把 ${result.totalFiles} 个文件从「${result.outputFolder}」移回原位。\n\n源位置已有同名文件时会自动重命名（添加 _rollbackN 后缀）。`)) {
+              cli.runRollback({ folder: result.outputFolder, apply: true, conflict: 'rename' });
+            }
+          }}
+          title="撤销这次整理（读报告反向 move）"
+        >
+          ↩️ 回滚这次
         </button>
       </div>
       <div className="tag-cloud">
@@ -269,14 +281,25 @@ function OrganizeResultView({ result }: { result: NonNullable<ReturnType<typeof 
                 </div>
               )}
               {showThumbs && p.thumbnail && (
-                <span className={`thumb-src-badge src-${p.thumbnail.source}`} title={`源: ${p.thumbnail.source}`}>
+                <span className={`thumb-src-badge src-${p.thumbnail.source}`} title={`缩略图源: ${p.thumbnail.source}`}>
                   {p.thumbnail.source === 'exif' ? 'EXIF' : p.thumbnail.source === 'cache' ? 'CACHE' : 'JPG'}
+                </span>
+              )}
+              {/* v0.7+: 日期来源徽章（左上角，跟 EXIF thumb 区分） */}
+              {p.dateSource && (
+                <span className={`date-source-badge ds-${p.dateSource}`} title={`日期来源: ${p.dateSource === 'exif' ? 'EXIF 拍摄时间' : '文件修改时间'}`}>
+                  {p.dateSource === 'exif' ? '📷 EXIF' : '🕐 mtime'}
                 </span>
               )}
             </div>
             <div className="thumb-meta">
               <div className="thumb-name" title={p.file}>{p.file}</div>
               <div className="thumb-target">{p.targetFolder.split(/[\\/]/).pop()}</div>
+              {p.dateFolder && (
+                <div className="thumb-date" title={p.dateSource === 'exif' ? `EXIF 拍摄日期` : `文件修改日期`}>
+                  📅 {p.dateFolder}
+                </div>
+              )}
               {p.clipTags.length > 0 && (
                 <div className="thumb-tags">{p.clipTags.slice(0, 2).map(t => `${t.label}(${t.score.toFixed(2)})`).join(' ')}</div>
               )}
@@ -284,6 +307,71 @@ function OrganizeResultView({ result }: { result: NonNullable<ReturnType<typeof 
           </div>
         ))}
         {visible.length > 200 && <div className="muted grid-end">仅显示前 200 条，共 {visible.length} 条匹配</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ============== Rollback 结果 ============== */
+function RollbackResultView({ result }: { result: NonNullable<ReturnType<typeof usePhotoVaultCli>['rollbackResult']> }) {
+  const [filter, setFilter] = useState<'all' | 'restored' | 'skipped' | 'failed'>('all');
+  const isOk = (result.success ?? 0) > 0;
+  const total = result.actions.length;
+  const restored = result.actions.filter(a => a.action === 'restore' || a.action === 'rename' || a.action === 'overwrite').length;
+  const skipped = result.actions.filter(a => a.action === 'missing-target' || a.action === 'source-exists' || a.action === 'same-location').length;
+  const visible = result.actions.filter(a => {
+    if (filter === 'all') return true;
+    if (filter === 'restored') return a.action === 'restore' || a.action === 'rename' || a.action === 'overwrite';
+    if (filter === 'skipped') return a.action === 'missing-target' || a.action === 'source-exists' || a.action === 'same-location';
+    return true;
+  });
+  return (
+    <div className={`result-card ${isOk ? 'success' : 'error'}`}>
+      <div className="result-header">
+        {isOk ? '↩️' : '⚠️'} 回滚完成
+        {result.success !== undefined && (
+          <span className="badge" style={{ background: isOk ? '#28a745' : '#dc3545' }}>
+            成功 {result.success} / 失败 {result.fail ?? 0}
+          </span>
+        )}
+        {result.stats.cleanedDirs > 0 && <span className="badge" style={{ background: '#6c757d' }}>清理 {result.stats.cleanedDirs} 个空目录</span>}
+      </div>
+      <div className="rollback-summary">
+        <div className="stat"><div className="stat-value">{restored}</div><div className="stat-label">已还原</div></div>
+        <div className="stat"><div className="stat-value">{skipped}</div><div className="stat-label">跳过</div></div>
+        <div className="stat"><div className="stat-value">{result.stats.rename}</div><div className="stat-label">重命名</div></div>
+        <div className="stat"><div className="stat-value">{result.stats.overwrite}</div><div className="stat-label">覆盖</div></div>
+      </div>
+      <div className="tag-cloud">
+        <button className={`tag-chip ${filter === 'all' ? 'active-filter' : ''}`} onClick={() => setFilter('all')}>
+          全部 <span className="count">{total}</span>
+        </button>
+        <button className={`tag-chip ${filter === 'restored' ? 'active-filter' : ''}`} onClick={() => setFilter('restored')}>
+          ✅ 已还原 <span className="count">{restored}</span>
+        </button>
+        <button className={`tag-chip ${filter === 'skipped' ? 'active-filter' : ''}`} onClick={() => setFilter('skipped')}>
+          ⊘ 跳过 <span className="count">{skipped}</span>
+        </button>
+      </div>
+      <div className="plan-list" style={{ maxHeight: 320 }}>
+        {visible.map((a, i) => {
+          const tag = a.action === 'restore' ? '↩️ ' :
+                      a.action === 'rename' ? '📝' :
+                      a.action === 'overwrite' ? '⚠️ ' :
+                      a.action === 'missing-target' ? '?' :
+                      a.action === 'source-exists' ? '⊘' :
+                      '⚪';
+          return (
+            <div key={i} className="plan-row">
+              <span className="plan-idx">{tag}</span>
+              <span className="plan-name">{a.file}</span>
+              <span className="plan-target" style={{ fontSize: '0.7rem' }}>
+                {a.from.split(/[\\/]/).pop()} → {a.to.split(/[\\/]/).pop()}
+              </span>
+              {a.error && <span className="plan-tags" style={{ color: '#dc3545' }}>{a.error}</span>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
