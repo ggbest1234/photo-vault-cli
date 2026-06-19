@@ -12,6 +12,26 @@
 - **结果可视化**：标签云 + 过滤 + 目标路径预览
 - **CLI 路径可配**：默认 `F:\Grok\photo-vault-test`
 
+## 🆕 最新功能
+
+### v0.8.0 (2026-06-19) — Image Modal + EXIF Time
+- **点击缩略图查看大图**：完整 EXIF 元数据 / 标签 / 路径（点路径复制）
+- **键盘导航**：ESC 关闭，← → 切换图片
+- 缩略图角标：📷 EXIF（绿）vs 🕐 mtime（黄）一眼看出归类时间来源
+- `dateFolder` 显示完整日期（yyyy-MM-dd），不再只是月份
+
+### v0.6.0 (2026-06-18) — Rollback
+- Organize 结果页右上角 **"↩️ 回滚这次"** 红色按钮
+- RollbackResultView：4-stat 摘要（已还原/跳过/重命名/覆盖）+ 过滤 chips
+
+### v0.5.0 (2026-06-18) — 初始 GUI
+- 🗂️ 整理 / 🔍 搜索 两个 Tab（扫描已并入整理）
+- 实时进度条 + 深色运行面板 + 日志流
+- 缩略图网格（auto-fill 140px minmax）
+- 标签云 + 过滤 + 滚动
+
+完整变更见 [CHANGELOG.md](../CHANGELOG.md)
+
 ## 🏗 架构
 
 ```

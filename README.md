@@ -13,7 +13,37 @@
 - 💾 **CLIP 推理缓存**：mtime+size hash 命中后零推理（同文件夹二次扫描 ~17× 加速）
 - 🛡️ **Dry-run 安全模式**：默认只预览，加 `--apply` 才移动
 - 📊 **清晰报告 + 实时进度**：JSON Lines 协议给 GUI
-- 🔒 **100% 本地运行**
+| 💾 **CLIP 推理缓存**：mtime+size hash 命中后零推理（同文件夹二次扫描 ~17× 加速）
+
+## 📋 版本历史
+
+> 完整 CHANGELOG 见 [CHANGELOG.md](CHANGELOG.md)。GitHub Release 见 [releases](https://github.com/ggbest1234/photo-vault-cli/releases)。
+
+### v0.8.0 (2026-06-19) — Performance & HEIC + Image Modal
+- `--profile` flag：输出性能指标（wall time / CPU / 峰值内存 / cache 命中率 / throughput）
+- **大规模基准**：1000 张图 87 MB 峰值 RAM，10870 files/s cache（**115× 加速**）
+- **HEIC graceful degradation**：iPhone HEIC 文件也能正确归类（不崩）
+- **GUI 大图查看 modal**：点击缩略图查看完整 EXIF 元数据，键盘 ←→ 切换，ESC 关闭
+
+### v0.7.0 (2026-06-19) — EXIF Time-aware
+- **EXIF DateTimeOriginal 优先**：用拍摄时间归类（不是文件 mtime）
+- 缩略图角标：📷 EXIF（绿）vs 🕐 mtime（黄）
+- 完整 EXIF 透传：Make / Model / GPS
+- Cache schema v1→v2（加入 EXIF 时间字段）
+
+### v0.6.0 (2026-06-18) — Rollback
+- `rollback` 命令：撤销 `organize --apply` 的文件移动
+- 3 种冲突策略：`--conflict skip` / `rename`（默认）/ `overwrite`
+- **GUI "↩️ 回滚这次" 按钮** + RollbackResultView
+- 自动清理空目录（含 by-tag / by-date 父目录）
+
+### v0.5.0 (2026-06-18) — Beta 🎉
+- **CLIP Large 模型集成**（~400MB ONNX）
+- **缩略图生成**：EXIF embedded + sharp fallback + 文件级缓存
+- **Tauri 2 + React 19 桌面 GUI**（`gui/` 子目录）
+- p-limit 并行 + mtime 缓存（17× 加速）
+- JSON Lines 协议（CLI↔GUI 通信）
+- 4 大命令：`scan` / `organize` / `search` / `rollback`（rollback 是 0.6 加的）
 
 ## 🚀 快速开始
 
