@@ -12,7 +12,7 @@ import { scanFolder, type ScannedFile } from '../scanner.js';
 import { clipTag, type ClipTag, isModelDownloaded } from '../clip.js';
 import { extractExif, type ExifData } from '../exif.js';
 import { heuristicTag } from '../heuristics.js';
-import { translateTag, translateTags } from '../i18n.js';
+import { translateTags, translateTagsWithMeta } from '../i18n.js';
 import { makeThumbnail } from '../thumbnail.js';
 import { emit, logEvent, progressEvent, resultEvent, errorEvent } from '../protocol.js';
 
@@ -33,13 +33,15 @@ type OrganizeOptions = {
   thumbCache?: string;
   concurrency?: string;
   profile?: boolean;          // v0.8+: 输出性能指标
-};
+    zhOverrides?: string;       // v0.9.1+: 用户级翻译覆盖文件路径
+  };
 
 type FilePlan = {
   source: string;
   name: string;
   tags: string[];                          // v0.9+: 原始英文 tag（机器用）
   tagsZh: string[];                        // v0.9+: 中文显示名（GUI 用）
+  untranslatedTags: string[];              // v0.9.1+: 未翻译英文（GUI 提示）
   clipTags: ClipTag[];
   targetFolder: string;
   targetPath: string;
@@ -193,8 +195,17 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
   const thumbSize = parseInt(options.thumbSize ?? '240', 10);
   const thumbCachePath = options.thumbCache ?? path.join(output, '.thumb-cache');
   const profile = options.profile ?? false;       // v0.8+: 输出性能指标
+    const zhOverrides = options.zhOverrides ?? '';  // v0.9.1+: 用户翻译覆盖文件
 
-  const thresholdNum = parseFloat(threshold);
+    // v0.9.1: 让 i18n 模块知道 overrides 路径
+    if (zhOverrides && zhOverrides.length > 0) {
+      try {
+        const { setOverridePath } = await import('../i18n.js');
+        setOverridePath(zhOverrides);
+      } catch {}
+    }
+
+    const thresholdNum = parseFloat(threshold);
   const limitNum = parseInt(limitOpt, 10);
   const concurrencyNum = Math.max(1, parseInt(concurrency, 10) || 2);
 
@@ -320,11 +331,13 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
         counter++;
       }
 
+      const { translated, untranslated } = translateTagsWithMeta(heuristicTags);
       plans[idx] = {
         source: file.path,
         name: file.name,
         tags: heuristicTags,
-        tagsZh: translateTags(heuristicTags),   // v0.9+: 中文翻译
+        tagsZh: translated.map(t => t.zh),
+        untranslatedTags: untranslated,
         clipTags: filteredClip,
         targetFolder,
         targetPath,
@@ -360,6 +373,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
         name: file.name,
         tags: [],
         tagsZh: [],
+        untranslatedTags: [],
         clipTags: [],
         targetFolder: path.join(output, 'by-tag', 'unsorted'),
         targetPath: path.join(output, 'by-tag', 'unsorted', file.name),
@@ -417,6 +431,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
       targetFolder: p.targetFolder,
       heuristicTags: p.tags,
       heuristicTagsZh: p.tagsZh,         // v0.9+: 中文
+      untranslatedTags: p.untranslatedTags, // v0.9.1+: 未翻译英文
       clipTags: p.clipTags,
       dateFolder: p.dateFolder,           // yyyy-MM-dd（GUI 显示）
       dateSource: p.dateSource,           // v0.7+: 'exif' | 'mtime'

@@ -18,6 +18,7 @@ export type ImageModalItem = {
   dateSource?: 'exif' | 'mtime';
   heuristicTags: string[];            // v0.9+: 英文
   heuristicTagsZh?: string[];         // v0.9+: 中文显示名
+  untranslatedTags?: string[];        // v0.9.1+: 未翻译（GUI 提示用户填）
   clipTags: Array<{ label: string; score: number }>;
   matchType?: 'filename' | 'tag';  // search 专用
   exif?: {

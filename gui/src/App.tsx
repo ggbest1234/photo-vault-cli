@@ -33,8 +33,9 @@ function App() {
       dateFolder: p.dateFolder ?? 'unknown',
       dateSource: p.dateSource,
       heuristicTags: p.heuristicTags ?? p.tags ?? [],
-      heuristicTagsZh: p.heuristicTagsZh ?? [],
-      clipTags: p.clipTags ?? p.clipScores ?? [],
+            heuristicTagsZh: p.heuristicTagsZh ?? [],
+            untranslatedTags: p.untranslatedTags ?? [],  // v0.9.1+ 未翻译
+            clipTags: p.clipTags ?? p.clipScores ?? [],
       matchType: p.matchType,
       exif: p.exif ?? null,
     }));
@@ -350,14 +351,22 @@ function OrganizeResultView({ result, cli, openImageModal }: { result: NonNullab
                 </div>
               )}
               {p.heuristicTagsZh && p.heuristicTagsZh.length > 0 && (
-                <div className="thumb-tags-zh" title={p.heuristicTags?.join(', ')}>
-                  🏷️ {p.heuristicTagsZh.slice(0, 3).join(' · ')}
-                </div>
-              )}
-              {p.clipTags.length > 0 && (
-                <div className="thumb-tags">{p.clipTags.slice(0, 2).map(t => `${t.label}(${t.score.toFixed(2)})`).join(' ')}</div>
-              )}
-            </div>
+                              <div className="thumb-tags-zh" title={p.heuristicTags?.join(', ')}>
+                                🏷️ {p.heuristicTagsZh.slice(0, 3).join(' · ')}
+                              </div>
+                            )}
+                            {p.untranslatedTags && p.untranslatedTags.length > 0 && (
+                              <div
+                                className="thumb-untranslated"
+                                title={`未翻译标签：${p.untranslatedTags.join(', ')}（点击右上角"翻译"按钮添加）`}
+                              >
+                                📝 待翻译: {p.untranslatedTags.slice(0, 2).join(', ')}{p.untranslatedTags.length > 2 ? '…' : ''}
+                              </div>
+                            )}
+                            {p.clipTags.length > 0 && (
+                              <div className="thumb-tags">{p.clipTags.slice(0, 2).map(t => `${t.label}(${t.score.toFixed(2)})`).join(' ')}</div>
+                            )}
+                          </div>
           </div>
         ))}
         {visible.length > 200 && <div className="muted grid-end">仅显示前 200 条，共 {visible.length} 条匹配</div>}
