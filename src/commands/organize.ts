@@ -12,6 +12,7 @@ import { scanFolder, type ScannedFile } from '../scanner.js';
 import { clipTag, type ClipTag, isModelDownloaded } from '../clip.js';
 import { extractExif, type ExifData } from '../exif.js';
 import { heuristicTag } from '../heuristics.js';
+import { translateTag, translateTags } from '../i18n.js';
 import { makeThumbnail } from '../thumbnail.js';
 import { emit, logEvent, progressEvent, resultEvent, errorEvent } from '../protocol.js';
 
@@ -37,7 +38,8 @@ type OrganizeOptions = {
 type FilePlan = {
   source: string;
   name: string;
-  tags: string[];
+  tags: string[];                          // v0.9+: 原始英文 tag（机器用）
+  tagsZh: string[];                        // v0.9+: 中文显示名（GUI 用）
   clipTags: ClipTag[];
   targetFolder: string;
   targetPath: string;
@@ -322,6 +324,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
         source: file.path,
         name: file.name,
         tags: heuristicTags,
+        tagsZh: translateTags(heuristicTags),   // v0.9+: 中文翻译
         clipTags: filteredClip,
         targetFolder,
         targetPath,
@@ -356,6 +359,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
         source: file.path,
         name: file.name,
         tags: [],
+        tagsZh: [],
         clipTags: [],
         targetFolder: path.join(output, 'by-tag', 'unsorted'),
         targetPath: path.join(output, 'by-tag', 'unsorted', file.name),
@@ -412,6 +416,7 @@ export async function organize(folder: string, options: OrganizeOptions = {}) {
       target: p.targetPath,
       targetFolder: p.targetFolder,
       heuristicTags: p.tags,
+      heuristicTagsZh: p.tagsZh,         // v0.9+: 中文
       clipTags: p.clipTags,
       dateFolder: p.dateFolder,           // yyyy-MM-dd（GUI 显示）
       dateSource: p.dateSource,           // v0.7+: 'exif' | 'mtime'

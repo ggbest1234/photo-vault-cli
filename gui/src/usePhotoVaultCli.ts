@@ -35,7 +35,8 @@ export type OrganizeResult = {
     source: string;
     target: string;
     targetFolder: string;
-    heuristicTags: string[];
+    heuristicTags: string[];           // v0.9+: 原始英文
+    heuristicTagsZh: string[];         // v0.9+: 中文显示名
     clipTags: Array<{ label: string; score: number }>;
     dateFolder: string;                          // yyyy-MM-dd
     dateSource?: 'exif' | 'mtime';               // v0.7+

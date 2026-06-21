@@ -16,7 +16,8 @@ export type ImageModalItem = {
   thumbnail?: { dataUrl: string; width: number; height: number; source: 'exif' | 'resize' | 'cache' | 'heic-decode' };
   dateFolder: string;
   dateSource?: 'exif' | 'mtime';
-  heuristicTags: string[];
+  heuristicTags: string[];            // v0.9+: 英文
+  heuristicTagsZh?: string[];         // v0.9+: 中文显示名
   clipTags: Array<{ label: string; score: number }>;
   matchType?: 'filename' | 'tag';  // search 专用
   exif?: {
@@ -133,9 +134,13 @@ export function ImageModal({ items, currentIndex, onClose, onNavigate }: ImageMo
             {item.heuristicTags.length > 0 && (
               <ModalSection title="🏷️ 启发式标签">
                 <div className="tag-cloud">
-                  {item.heuristicTags.map((t, i) => (
-                    <span key={i} className="tag-chip">{t}</span>
-                  ))}
+                  {item.heuristicTagsZh && item.heuristicTagsZh.length > 0
+                    ? item.heuristicTagsZh.map((t, i) => (
+                        <span key={i} className="tag-chip" title={item.heuristicTags[i]}>{t}</span>
+                      ))
+                    : item.heuristicTags.map((t, i) => (
+                        <span key={i} className="tag-chip">{t}</span>
+                      ))}
                 </div>
               </ModalSection>
             )}

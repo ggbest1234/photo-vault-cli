@@ -33,6 +33,7 @@ function App() {
       dateFolder: p.dateFolder ?? 'unknown',
       dateSource: p.dateSource,
       heuristicTags: p.heuristicTags ?? p.tags ?? [],
+      heuristicTagsZh: p.heuristicTagsZh ?? [],
       clipTags: p.clipTags ?? p.clipScores ?? [],
       matchType: p.matchType,
       exif: p.exif ?? null,
@@ -346,6 +347,11 @@ function OrganizeResultView({ result, cli, openImageModal }: { result: NonNullab
               {p.dateFolder && (
                 <div className="thumb-date" title={p.dateSource === 'exif' ? `EXIF 拍摄日期` : `文件修改日期`}>
                   📅 {p.dateFolder}
+                </div>
+              )}
+              {p.heuristicTagsZh && p.heuristicTagsZh.length > 0 && (
+                <div className="thumb-tags-zh" title={p.heuristicTags?.join(', ')}>
+                  🏷️ {p.heuristicTagsZh.slice(0, 3).join(' · ')}
                 </div>
               )}
               {p.clipTags.length > 0 && (
