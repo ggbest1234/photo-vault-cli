@@ -2,7 +2,7 @@
 
 > 本地 AI 照片自动整理工具 · 支持 Windows / macOS / Linux
 
-![Status](https://img.shields.io/badge/status-beta-yellow) ![Version](https://img.shields.io/badge/version-0.9.0-blue) ![Node](https://img.shields.io/badge/node-%3E%3D20-green) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+![Status](https://img.shields.io/badge/status-beta-yellow) ![Version](https://img.shields.io/badge/version-0.9.1-blue) ![Node](https://img.shields.io/badge/node-%3E%3D20-green) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 ## ✨ 核心特性
 
