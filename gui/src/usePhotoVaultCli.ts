@@ -285,6 +285,26 @@ export function usePhotoVaultCli(cliCwd: string) {
     [run]
   );
 
+  // v0.9.3+: 调用 CLI add-zh 写用户翻译（不用 JSON 协议，简单 stdout/stderr 捕获）
+  const addZh = useCallback(
+    async (opts: { tag: string; zh: string; overridesPath: string }) => {
+      const fullArgs = ['dist/index.js', 'add-zh', opts.tag, opts.zh, '--overrides', opts.overridesPath];
+      const cmd = Command.create('node', fullArgs, { cwd: cliCwd });
+      let buf = '';
+      cmd.stdout.on('data', (chunk: string) => { buf += chunk; });
+      let errBuf = '';
+      cmd.stderr.on('data', (chunk: string) => { errBuf += chunk; });
+      try {
+        await cmd.spawn();
+        await new Promise<void>((resolve) => cmd.on('close', () => resolve()));
+        return { ok: true, stdout: buf.trim(), stderr: errBuf.trim() };
+      } catch (err: any) {
+        return { ok: false, error: String(err?.message || err), stdout: buf.trim(), stderr: errBuf.trim() };
+      }
+    },
+    [cliCwd]
+  );
+
   return {
     state,
     progress,
@@ -298,6 +318,7 @@ export function usePhotoVaultCli(cliCwd: string) {
     runSearch,
     runScan,
     runRollback,
+    addZh,
     reset,
   };
 }

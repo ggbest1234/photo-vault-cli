@@ -269,6 +269,8 @@ function ScanSummary({ scan, scanning }: { scan: ScanResult; scanning: boolean }
 function OrganizeResultView({ result, cli, openImageModal }: { result: NonNullable<ReturnType<typeof usePhotoVaultCli>['organizeResult']>; cli: ReturnType<typeof usePhotoVaultCli>; openImageModal: (clicked: any, list: any[]) => void }) {
   const [filter, setFilter] = useState('');
   const [showThumbs, setShowThumbs] = useState(true);
+  const [translateModalOpen, setTranslateModalOpen] = useState(false);
+  const allUntranslated = Array.from(new Set(result.plans.flatMap((p) => p.untranslatedTags ?? []))).sort();
   const visible = result.plans.filter((p) => !filter || p.targetFolder.includes(filter) || p.file.includes(filter));
   const byTag = new Map<string, number>();
   result.plans.forEach((p) => {
@@ -280,13 +282,25 @@ function OrganizeResultView({ result, cli, openImageModal }: { result: NonNullab
       <div className="result-header">
         ✅ 计划完成 · 共 {result.totalFiles} 个文件 · 耗时 {(result.durationMs / 1000).toFixed(1)}s
         {result.cacheHits > 0 && <span className="badge">缓存命中 {result.cacheHits}</span>}
+        {allUntranslated.length > 0 && (
+          <span className="badge untranslated-badge">📝 {allUntranslated.length} 个待翻译</span>
+        )}
         <button
           className="thumb-toggle"
-          onClick={() => setShowThumbs(v => !v)}
+          onClick={() => setShowThumbs((v) => !v)}
           title="切换缩略图"
         >
           {showThumbs ? '🖼️ 隐藏缩略图' : '🖼️ 显示缩略图'}
         </button>
+        {allUntranslated.length > 0 && (
+          <button
+            className="thumb-toggle translate-btn"
+            onClick={() => setTranslateModalOpen(true)}
+            title="为未翻译标签添加中文"
+          >
+            ✏️ 翻译 ({allUntranslated.length})
+          </button>
+        )}
         <button
           className="thumb-toggle rollback-btn"
           onClick={() => {
@@ -370,6 +384,113 @@ function OrganizeResultView({ result, cli, openImageModal }: { result: NonNullab
           </div>
         ))}
         {visible.length > 200 && <div className="muted grid-end">仅显示前 200 条，共 {visible.length} 条匹配</div>}
+      </div>
+      {translateModalOpen && (
+        <TranslateModal
+          untranslated={allUntranslated}
+          cliCwd={(cli as any).cliCwd || ''}
+          onClose={() => setTranslateModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function TranslateModal({ untranslated, cliCwd, onClose }: {
+  untranslated: string[];
+  cliCwd: string;
+  onClose: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState<{ ok: number; fail: number; path: string } | null>(null);
+
+  const overridesPath = cliCwd ? `${cliCwd}/zh-overrides.json` : 'zh-overrides.json';
+
+  const suggest = (tag: string): string => {
+    const s: Record<string, string> = {
+      neon_sign: '霓虹灯招牌',
+      sunset_beach: '海滩日落',
+      running: '跑步',
+      walked: '散步',
+      city_skyline: '城市天际线',
+    };
+    return s[tag.toLowerCase()] || '';
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    let ok = 0, fail = 0;
+    for (const tag of untranslated) {
+      const zh = (values[tag] || '').trim();
+      if (!zh) continue;
+      try {
+        const fullArgs = ['dist/index.js', 'add-zh', tag, zh, '--overrides', overridesPath];
+        const { Command } = await import('@tauri-apps/plugin-shell');
+        const cmd = Command.create('node', fullArgs, { cwd: cliCwd || '.' });
+        let buf = '';
+        cmd.stdout.on('data', (c: string) => { buf += c; });
+        await cmd.spawn();
+        await new Promise<void>((r) => cmd.on('close', () => r()));
+        if (buf.includes('Added')) ok++;
+        else fail++;
+      } catch {
+        fail++;
+      }
+    }
+    setSubmitting(false);
+    setDone({ ok, fail, path: overridesPath });
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-content translate-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose}>×</button>
+        <h3>✏️ 添加中文翻译</h3>
+        <p className="muted">
+          {done
+            ? `✅ 已写入 ${done.ok} 条${done.fail > 0 ? `，${done.fail} 失败` : ''}。重启 organize 或下次扫描即可生效。`
+            : `为以下 ${untranslated.length} 个未翻译的英文标签添加中文。提交后会写到「${overridesPath}」。`}
+        </p>
+        {!done ? (
+          <>
+            <div className="translate-list">
+              {untranslated.map((tag) => (
+                <div key={tag} className="translate-row">
+                  <span className="translate-tag" title={tag}>{tag}</span>
+                  <span className="translate-arrow">→</span>
+                  <input
+                    className="translate-input"
+                    type="text"
+                    placeholder={suggest(tag) || '中文'}
+                    value={values[tag] || ''}
+                    onChange={(e) => setValues((v) => ({ ...v, [tag]: e.target.value }))}
+                  />
+                  {suggest(tag) && !values[tag] && (
+                    <button
+                      className="suggest-btn"
+                      type="button"
+                      onClick={() => setValues((v) => ({ ...v, [tag]: suggest(tag) }))}
+                      title="使用建议"
+                    >
+                      💡
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="translate-actions">
+              <button className="btn" onClick={onClose} disabled={submitting}>取消</button>
+              <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+                {submitting ? '⏳ 提交中...' : `✅ 提交 ${Object.values(values).filter(v => v.trim()).length} 条`}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="translate-actions">
+            <button className="btn btn-primary" onClick={onClose}>完成</button>
+          </div>
+        )}
       </div>
     </div>
   );

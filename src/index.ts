@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { organize } from './commands/organize.js';
@@ -9,6 +9,7 @@ import { search } from './commands/search.js';
 import { rollback } from './commands/rollback.js';
 import { isModelDownloaded } from './clip.js';
 import { preloadSharp } from './thumbnail.js';
+import { addOverride } from './i18n.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
@@ -16,7 +17,6 @@ const version = pkg.version;
 
 // 关键：在 import clip/transformers 之前预先加载 sharp
 // 避免 @xenova/transformers 静态 import 污染 sharp 的 native binary
-// （二者是同一进程内的 native module 竞争）
 await preloadSharp();
 
 const program = new Command();
@@ -125,6 +125,22 @@ program
       json: !!opts.json,
       stream: !!opts.stream,
     });
+  });
+
+program
+  .command('add-zh <tag> <zh>')
+  .description('添加中文翻译到用户 overrides 文件（v0.9.3+ GUI 集成）')
+  .option('--overrides <file>', '覆盖文件路径', 'zh-overrides.json')
+  .action((tag, zh, opts) => {
+    const result = addOverride(tag, zh, opts.overrides);
+    if (result.ok) {
+      console.log(`✅ Added: "${tag}" → "${zh}"`);
+      console.log(`   File: ${result.path}`);
+      console.log(`   Total user-added: ${result.total}`);
+    } else {
+      console.error(`❌ Write failed (path: ${result.path})`);
+      process.exit(1);
+    }
   });
 
 program.parseAsync(process.argv).catch((err) => {

@@ -374,6 +374,39 @@ input[type="range"] { width: 100%; padding: 0; }
 /* Rollback */
 .rollback-btn { background: #ffe6e6; color: #c92a2a; }
 .rollback-btn:hover { background: #c92a2a; color: white; }
+
+/* v0.9.3+: 翻译按钮 + 翻译 modal */
+.translate-btn { background: #fff4e6; color: #d9480f; border-color: #ffa94d; }
+.translate-btn:hover { background: #d9480f; color: white; }
+.untranslated-badge { background: #ffa94d; color: white; }
+.translate-modal { max-width: 580px; width: 90vw; }
+.translate-list { max-height: 50vh; overflow-y: auto; padding: 0.5rem 0; }
+.translate-row {
+  display: grid;
+  grid-template-columns: 1fr auto 2fr auto;
+  gap: 0.5rem; align-items: center;
+  padding: 0.4rem 0; border-bottom: 1px solid #f0f0f0;
+}
+.translate-tag {
+  font-family: 'Consolas', monospace; font-size: 0.85rem;
+  color: #c92a2a; background: #fff0f0; padding: 0.2rem 0.5rem; border-radius: 4px;
+  border: 1px solid #ffe0e0; word-break: break-all;
+}
+.translate-arrow { color: #888; font-size: 1rem; }
+.translate-input {
+  padding: 0.35rem 0.6rem; border: 1px solid #ddd; border-radius: 4px;
+  font-size: 0.9rem; font-family: inherit;
+}
+.translate-input:focus { outline: none; border-color: #007bff; box-shadow: 0 0 0 2px rgba(0,123,255,0.15); }
+.suggest-btn {
+  background: #fff8e6; border: 1px solid #ffe58f; border-radius: 4px;
+  cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.9rem;
+}
+.suggest-btn:hover { background: #ffe58f; }
+.translate-actions {
+  display: flex; gap: 0.5rem; justify-content: flex-end;
+  margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #f0f0f0;
+}
 .rollback-summary {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;
   background: #f8f9fa; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.75rem;
